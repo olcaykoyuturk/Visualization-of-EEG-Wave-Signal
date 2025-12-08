@@ -1,17 +1,18 @@
 # config.py
+#
+# This file is used to collect common settings used throughout the application.
+# Keeping parameters here makes the project easier to manage.
 
-"""
-Uygulama genelinde kullanılacak sabit ayarlar.
-Burayı merkezi konfigürasyon dosyası gibi düşünebilirsin.
-"""
+# Sampling frequency (Hz)
+# EEG recordings typically use 250–500 Hz, so this value works as a default.
+SAMPLING_RATE = 250.0
 
-# Varsayılan örnekleme frekansı (Hz)
-SAMPLING_RATE = 250.0  # Gerekiyorsa bunu daha sonra gerçek fs'e göre güncelleriz
+# Time window used during analysis (in seconds)
+# For example, to inspect the interval between 2–6 seconds.
+DEFAULT_ANALYSIS_WINDOW = (2.0, 6.0)
 
-# Analiz penceresi (saniye cinsinden)
-DEFAULT_ANALYSIS_WINDOW = (2.0, 6.0)  # Örn. 2-6 saniye aralığı
-
-# EEG kanalları (senin projene göre bunu genişletebiliriz)
+# EEG electrode names
+# A few channels from the 10–20 system are enough for this project.
 ELECTRODES = [
     "C3",
     "C4",
@@ -23,8 +24,8 @@ ELECTRODES = [
     "Cz",
 ]
 
-# EEG verilerinde kullanılabilecek elektrot yerleşimleri (10-20 sistemi 2D proje)
-# C3 – C4 - Cz kullanan basit bir düzende idealdir.
+# 2D positions of each electrode (for visualization in the UI)
+# These coordinates represent a simplified layout.
 ELECTRODE_POSITIONS = {
     "C3": (-0.5, 0),
     "C4": (0.5, 0),
@@ -36,7 +37,8 @@ ELECTRODE_POSITIONS = {
     "POz": (0, -0.7),
 }
 
-# Frekans band tanımları (Hz cinsinden)
+# Classical EEG frequency bands (in Hz)
+# Each band represents a different type of brain activity.
 FREQUENCY_BANDS = {
     "delta": (0.5, 4),
     "theta": (4, 8),
@@ -45,6 +47,6 @@ FREQUENCY_BANDS = {
     "gamma": (30, 45),
 }
 
-# İleride UI'dan da okunabilecek basit metinler
+# Application information (for display in the UI)
 APP_NAME = "EEG Motor Activity Analyzer"
 APP_VERSION = "0.1.0"

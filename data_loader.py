@@ -12,12 +12,12 @@ from config import SAMPLING_RATE, ELECTRODES
 @dataclass
 class EEGDataset:
     """
-    Tek bir EEG .csv dosyasını temsil eden sınıf.
+    Represents a single EEG .csv file.
 
-    - df: Ham verinin DataFrame hali (time, C3, C4, ...)
-    - fs: Örnekleme frekansı
-    - time: NumPy array olarak zaman vektörü (saniye)
-    - available_channels: Bu CSV'de gerçekten var olan kanallar (C3, C4, ...)
+    - df: DataFrame version of the raw data (time, C3, C4, ...)
+    - fs: Sampling frequency
+    - time: Time vector as a NumPy array (seconds)
+    - available_channels: Channels that actually exist in this CSV (C3, C4, ...)
     """
     filepath: str
     df: pd.DataFrame
@@ -32,19 +32,19 @@ class EEGDataset:
         fs: Optional[float] = None,
     ) -> "EEGDataset":
         """
-        CSV dosyasından EEGDataset nesnesi oluşturur.
+        Creates an EEGDataset object from a CSV file.
 
-        :param filepath: CSV dosya yolu
-        :param fs: Örnekleme frekansı (None ise config.SAMPLING_RATE kullanılır)
+        :param filepath: Path to the CSV file
+        :param fs: Sampling frequency (if None, uses config.SAMPLING_RATE)
         """
 
         if fs is None:
             fs = SAMPLING_RATE
 
-        # CSV'yi oku
+        # Read the CSV file
         df = pd.read_csv(filepath)
 
-        # time kolonu yoksa kendimiz oluşturalım
+        # If "time" column is missing, generate it manually
         if "time" in df.columns:
             time = df["time"].to_numpy()
         else:
@@ -52,7 +52,7 @@ class EEGDataset:
             time = np.arange(num_samples) / fs
             df.insert(0, "time", time)
 
-        # Mevcut kanalları belirle
+        # Detect available channels
         available_channels = [
             ch for ch in ELECTRODES if ch in df.columns
         ]
@@ -65,12 +65,12 @@ class EEGDataset:
             available_channels=available_channels,
         )
 
-        # Artık state eklemiyoruz
+        # We no longer store additional state data
         return dataset
 
     def get_segment(self, t_start: float, t_end: float) -> pd.DataFrame:
         """
-        Belirli bir zaman aralığındaki veriyi döner.
+        Returns the data within a specific time interval.
         """
         mask = (self.time >= t_start) & (self.time <= t_end)
         return self.df.loc[mask].copy()
