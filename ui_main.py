@@ -33,6 +33,7 @@ from matplotlib.figure import Figure
 from scipy.interpolate import griddata
 from scipy.signal import welch
 
+# Assuming config, data_loader, and processing modules exist and are available
 from config import APP_NAME, APP_VERSION, ELECTRODE_POSITIONS
 from data_loader import EEGDataset
 from processing import (
@@ -43,33 +44,39 @@ from processing import (
 
 
 # ---------------------------------------------------------------------
-# DataFrame -> Qt Table modeli
+# DataFrame -> Qt Table Model
 # ---------------------------------------------------------------------
 class PandasModel(QAbstractTableModel):
-    """Pandas DataFrame'i QTableView'de göstermek için basit model."""
+    """Simple model to display a Pandas DataFrame in a QTableView."""
 
     def __init__(self, df: pd.DataFrame, parent=None):
         super().__init__(parent)
         self._df = df
 
     def rowCount(self, parent=QModelIndex()) -> int:
+        # Return 0 if the index is valid (i.e., this is a sub-model) or the number of rows otherwise
         return 0 if parent.isValid() else len(self._df)
 
     def columnCount(self, parent=QModelIndex()) -> int:
+        # Return 0 if the index is valid (i.e., this is a sub-model) or the number of columns otherwise
         return 0 if parent.isValid() else len(self._df.columns)
 
     def data(self, index: QModelIndex, role=Qt.DisplayRole):
         if not index.isValid():
             return None
+        # Display role is used to populate the table cells
         if role == Qt.DisplayRole:
+            # Retrieve data from the DataFrame using integer-location indexing (.iat)
             return str(self._df.iat[index.row(), index.column()])
         return None
 
     def headerData(self, section: int, orientation: Qt.Orientation, role=Qt.DisplayRole):
         if role != Qt.DisplayRole:
             return None
+        # Horizontal header displays column names
         if orientation == Qt.Horizontal:
             return str(self._df.columns[section])
+        # Vertical header displays row indices
         else:
             return str(section)
 
@@ -79,14 +86,14 @@ class PandasModel(QAbstractTableModel):
 # ---------------------------------------------------------------------
 class MainWindow(QMainWindow):
     """
-    Sekmeli EEG analiz arayüzü:
+    Tabbed EEG analysis interface:
       - Raw Data
       - Filtered Signals
       - Band Power
       - Spectrograms
       - Band Timeline (Mu)
-      - ERD/ERS (manuel + trial-based)
-      - Topographic Map (raw veya band-seçimli)
+      - ERD/ERS (manual + trial-based)
+      - Topographic Map (raw or band-selected)
     """
 
     def __init__(self):
@@ -95,27 +102,27 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         self.resize(1300, 750)
 
-        # Dataset durumu
+        # Dataset state variables
         self.dataset: Optional[EEGDataset] = None
         self.selected_row_index: Optional[int] = None
         self.selected_time: Optional[float] = None
 
-        # Filtre ayarları (yalnızca "Filtered Signals", "Spectrograms", "Mu Timeline" için)
+        # Filter settings (used for "Filtered Signals", "Spectrograms", "Mu Timeline")
         self.filter_lowcut: float = 5.0
         self.filter_highcut: float = 35.0
         self.filter_notch_enabled: bool = True
         self.filter_order: int = 4
 
-        # ---- Ana sekme widget'ı ----
+        # ---- Main tab widget ----
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
 
-        # -------- Raw Data tab --------
+        # -------- Raw Data tab setup --------
         self.raw_tab = QWidget()
         self.raw_layout = QVBoxLayout()
 
         raw_header = QHBoxLayout()
-        raw_header_label = QLabel("Raw EEG Data (CSV tablosu)")
+        raw_header_label = QLabel("Raw EEG Data (CSV table)")
         self.raw_info_btn = QPushButton("Info")
         self.raw_info_btn.clicked.connect(self._show_raw_info)
         raw_header.addWidget(raw_header_label)
@@ -130,7 +137,7 @@ class MainWindow(QMainWindow):
         self.raw_tab.setLayout(self.raw_layout)
         self.tabs.addTab(self.raw_tab, "Raw Data")
 
-        # -------- Filtered Signals tab --------
+        # -------- Filtered Signals tab setup --------
         self.filtered_tab = QWidget()
         self.filtered_layout = QVBoxLayout()
 
@@ -143,19 +150,22 @@ class MainWindow(QMainWindow):
         filt_header.addWidget(self.filtered_info_btn)
         self.filtered_layout.addLayout(filt_header)
 
+        # Matplotlib canvas for plotting filtered signals
         self.filtered_canvas = FigureCanvas(Figure(figsize=(5, 3)))
         self.filtered_layout.addWidget(self.filtered_canvas)
         self.filtered_tab.setLayout(self.filtered_layout)
         self.tabs.addTab(self.filtered_tab, "Filtered Signals")
 
-        # -------- Band Power tab --------
+        # -------- Band Power tab setup --------
         self.bandpower_tab = QWidget()
         self.bandpower_layout = QVBoxLayout()
 
         bp_ctrl_layout = QHBoxLayout()
+        # Checkbox to use a short window around the selected time point
         self.bandpower_use_window = QCheckBox("Use selected row window")
         self.bandpower_use_window.setChecked(False)
 
+        # Spinbox for defining the window length in seconds
         self.bandpower_window_spin = QDoubleSpinBox()
         self.bandpower_window_spin.setRange(0.1, 10.0)
         self.bandpower_window_spin.setSingleStep(0.1)
@@ -172,12 +182,13 @@ class MainWindow(QMainWindow):
         bp_ctrl_layout.addStretch()
         self.bandpower_layout.addLayout(bp_ctrl_layout)
 
+        # Matplotlib canvas for plotting band power bar charts
         self.bandpower_canvas = FigureCanvas(Figure(figsize=(5, 3)))
         self.bandpower_layout.addWidget(self.bandpower_canvas)
         self.bandpower_tab.setLayout(self.bandpower_layout)
         self.tabs.addTab(self.bandpower_tab, "Band Power")
 
-        # -------- Spectrograms tab --------
+        # -------- Spectrograms tab setup --------
         self.spectrogram_tab = QWidget()
         self.spectrogram_layout = QVBoxLayout()
 
@@ -190,22 +201,25 @@ class MainWindow(QMainWindow):
         spec_header.addWidget(self.spectrogram_info_btn)
         self.spectrogram_layout.addLayout(spec_header)
 
+        # Matplotlib canvas for plotting spectrograms
         self.spectrogram_canvas = FigureCanvas(Figure(figsize=(5, 4)))
         self.spectrogram_layout.addWidget(self.spectrogram_canvas)
         self.spectrogram_tab.setLayout(self.spectrogram_layout)
         self.tabs.addTab(self.spectrogram_tab, "Spectrograms")
 
-        # -------- Band Timeline (Mu) tab --------
+        # -------- Band Timeline (Mu) tab setup --------
         self.timeline_tab = QWidget()
         self.timeline_layout = QVBoxLayout()
 
         tl_ctrl = QHBoxLayout()
+        # Window length control for sliding window power calculation
         self.timeline_window_label = QLabel("Window (s):")
         self.timeline_window_spin = QDoubleSpinBox()
         self.timeline_window_spin.setRange(0.2, 10.0)
         self.timeline_window_spin.setSingleStep(0.2)
         self.timeline_window_spin.setValue(2.0)
 
+        # Step size control for sliding window power calculation
         self.timeline_step_label = QLabel("Step (s):")
         self.timeline_step_spin = QDoubleSpinBox()
         self.timeline_step_spin.setRange(0.1, 5.0)
@@ -226,17 +240,19 @@ class MainWindow(QMainWindow):
 
         self.timeline_layout.addLayout(tl_ctrl)
 
+        # Matplotlib canvas for plotting the band power over time
         self.timeline_canvas = FigureCanvas(Figure(figsize=(5, 3)))
         self.timeline_layout.addWidget(self.timeline_canvas)
         self.timeline_tab.setLayout(self.timeline_layout)
         self.tabs.addTab(self.timeline_tab, "Band Timeline (Mu 8–12 Hz)")
 
-        # -------- ERD/ERS tab --------
+        # -------- ERD/ERS tab setup --------
         self.erd_tab = QWidget()
         self.erd_layout = QVBoxLayout()
 
-        # ---- Manuel ERD/ERS kontrol bloğu ----
+        # ---- Manual ERD/ERS control block ----
         erd_ctrl = QHBoxLayout()
+        # Spinboxes for defining the absolute time intervals for baseline and task
         self.erd_baseline_start = QDoubleSpinBox()
         self.erd_baseline_end = QDoubleSpinBox()
         self.erd_task_start = QDoubleSpinBox()
@@ -252,6 +268,7 @@ class MainWindow(QMainWindow):
             sb.setDecimals(3)
             sb.setSingleStep(0.1)
 
+        # Combobox to select the frequency band for ERD/ERS calculation
         self.erd_band_combo = QComboBox()
 
         erd_ctrl.addWidget(QLabel("Baseline start (s):"))
@@ -275,26 +292,28 @@ class MainWindow(QMainWindow):
 
         self.erd_layout.addLayout(erd_ctrl)
 
-        # Manuel ERD açıklama etiketi
+        # Information label for manual ERD/ERS
         self.erd_info_label = QLabel(
-            "Öneri: Motor imagery analizi için genelde Mu (8–12 Hz) ve Beta (13–30 Hz) "
-            "bantları kullanılır.\n"
-            "Pozitif ERD/ERS = güçte azalma (ERD), negatif ERD/ERS = güçte artış (ERS)."
+            "Suggestion: Mu (8–12 Hz) and Beta (13–30 Hz) bands are typically used "
+            "for motor imagery analysis.\n"
+            "Positive ERD/ERS = power decrease (ERD), negative ERD/ERS = power increase (ERS)."
         )
         self.erd_info_label.setWordWrap(True)
         self.erd_info_label.setStyleSheet("color: gray; font-size: 10pt;")
         self.erd_layout.addWidget(self.erd_info_label)
 
+        # Matplotlib canvas for plotting manual ERD/ERS bar chart
         self.erd_canvas = FigureCanvas(Figure(figsize=(5, 3)))
         self.erd_layout.addWidget(self.erd_canvas)
 
-        # ---- Trial-based ERD/ERS kontrol bloğu ----
-        trial_title = QLabel("Trial-based ERD/ERS (bilimsel analiz)")
+        # ---- Trial-based ERD/ERS control block ----
+        trial_title = QLabel("Trial-based ERD/ERS (scientific analysis)")
         trial_title.setStyleSheet("font-weight: bold; margin-top: 12px;")
         self.erd_layout.addWidget(trial_title)
 
         trial_ctrl = QHBoxLayout()
 
+        # Spinboxes for defining trial and relative time windows
         self.trial_duration_spin = QDoubleSpinBox()
         self.trial_duration_spin.setRange(0.5, 60.0)
         self.trial_duration_spin.setSingleStep(0.5)
@@ -345,27 +364,30 @@ class MainWindow(QMainWindow):
 
         self.erd_layout.addLayout(trial_ctrl)
 
+        # Information label for trial-based ERD/ERS
         self.erd_trial_info_label = QLabel(
-            "Not: Kayıt, ardışık trial'lara bölünür. Her trial için ERD/ERS hesaplanır ve "
-            "kanal bazında ortalaması alınır. Trial pencereleri relative sürelere göre ayarlanır."
+            "Note: The recording is divided into consecutive trials. ERD/ERS is calculated for each trial, and "
+            "the average is taken per channel. Trial windows are set based on relative times."
         )
         self.erd_trial_info_label.setWordWrap(True)
         self.erd_trial_info_label.setStyleSheet("color: gray; font-size: 9pt;")
         self.erd_layout.addWidget(self.erd_trial_info_label)
 
+        # Matplotlib canvas for plotting trial-based ERD/ERS bar chart with error bars
         self.erd_trial_canvas = FigureCanvas(Figure(figsize=(5, 3)))
         self.erd_layout.addWidget(self.erd_trial_canvas)
 
         self.erd_tab.setLayout(self.erd_layout)
         self.tabs.addTab(self.erd_tab, "ERD/ERS")
 
-        # -------- Topographic Map tab --------
+        # -------- Topographic Map tab setup --------
         self.topo_tab = QWidget()
         self.topo_layout = QVBoxLayout()
 
         topo_ctrl_layout = QHBoxLayout()
         topo_ctrl_layout.addWidget(QLabel("Topomap mode:"))
         self.topo_mode_combo = QComboBox()
+        # Default mode is Raw amplitude
         self.topo_mode_combo.addItem("Raw amplitude", userData=None)
         topo_ctrl_layout.addWidget(self.topo_mode_combo)
 
@@ -376,12 +398,13 @@ class MainWindow(QMainWindow):
         topo_ctrl_layout.addStretch()
         self.topo_layout.addLayout(topo_ctrl_layout)
 
+        # Matplotlib canvas for plotting the topographic map
         self.topo_canvas = FigureCanvas(Figure(figsize=(4, 4)))
         self.topo_layout.addWidget(self.topo_canvas)
         self.topo_tab.setLayout(self.topo_layout)
         self.tabs.addTab(self.topo_tab, "Topographic Map")
 
-        # Kontrol bağlantıları
+        # Control connections (connect UI elements to update methods)
         self.bandpower_use_window.stateChanged.connect(
             lambda _: (self._update_band_power(), self._update_topomap())
         )
@@ -399,6 +422,7 @@ class MainWindow(QMainWindow):
             lambda _: self._update_band_timeline()
         )
 
+        # Connect manual ERD/ERS time control changes
         for sb in (
             self.erd_baseline_start,
             self.erd_baseline_end,
@@ -407,73 +431,81 @@ class MainWindow(QMainWindow):
         ):
             sb.valueChanged.connect(lambda _: self._update_erd_ers())
 
+        # Connect manual ERD/ERS band selection change
         self.erd_band_combo.currentIndexChanged.connect(
             lambda _: self._update_erd_ers()
         )
 
+        # Connect trial-based ERD/ERS compute button
         self.trial_compute_button.clicked.connect(self._compute_trial_erd_ers)
 
-        # Menü
+        # Menu setup
         self._create_menu()
 
         self.statusBar().showMessage("Ready")
 
     # ------------------------------------------------------------------
-    # Menü
+    # Menu setup
     # ------------------------------------------------------------------
     def _create_menu(self):
         menu = self.menuBar()
 
-        # File
-        m_file = menu.addMenu("File")
-        act_open = QAction("Open CSV...", self)
+        # File Menu
+        m_file = menu.addMenu("&File")
+        act_open = QAction("&Open CSV...", self)
         act_open.triggered.connect(self.open_csv)
         m_file.addAction(act_open)
 
         m_file.addSeparator()
-        act_exit = QAction("Exit", self)
+        act_exit = QAction("E&xit", self)
         act_exit.triggered.connect(self.close)
         m_file.addAction(act_exit)
 
-        # Analysis
-        m_analysis = menu.addMenu("Analysis")
-        act_filter = QAction("Filter Settings...", self)
+        # Analysis Menu
+        m_analysis = menu.addMenu("&Analysis")
+        act_filter = QAction("&Filter Settings...", self)
         act_filter.triggered.connect(self._dialog_filter_settings)
         m_analysis.addAction(act_filter)
 
-        # Help
-        m_help = menu.addMenu("Help")
-        act_about = QAction("About", self)
+        # Help Menu
+        m_help = menu.addMenu("&Help")
+        act_about = QAction("&About", self)
         act_about.triggered.connect(self._show_about)
         m_help.addAction(act_about)
 
     def _show_about(self):
+        """Displays the 'About' message box."""
         QMessageBox.information(
             self,
             "About",
-            f"{APP_NAME} v{APP_VERSION}\n\nEEG motor aktivite analiz aracı.",
+            f"{APP_NAME} v{APP_VERSION}\n\nEEG motor activity analysis tool.",
         )
 
     # ------------------------------------------------------------------
     # Filter settings dialog
     # ------------------------------------------------------------------
     def _dialog_filter_settings(self):
+        """Opens a dialog to configure the global filter settings."""
         dlg = QDialog(self)
         dlg.setWindowTitle("Filter Settings")
         form = QFormLayout(dlg)
 
+        # Lowcut frequency spinbox
         low_spin = QDoubleSpinBox()
         low_spin.setRange(0.1, 100.0)
         low_spin.setValue(self.filter_lowcut)
 
+        # Highcut frequency spinbox
         high_spin = QDoubleSpinBox()
         high_spin.setRange(0.1, 200.0)
         high_spin.setValue(self.filter_highcut)
 
+        # Filter order spinbox
         order_spin = QSpinBox()
         order_spin.setRange(1, 10)
         order_spin.setValue(self.filter_order)
 
+        # Notch filter checkbox
         notch_cb = QCheckBox("Enable 50 Hz notch")
         notch_cb.setChecked(self.filter_notch_enabled)
 
@@ -489,11 +521,13 @@ class MainWindow(QMainWindow):
         buttons.rejected.connect(dlg.reject)
 
         if dlg.exec_() == QDialog.Accepted:
+            # Update filter settings from dialog
             self.filter_lowcut = float(low_spin.value())
             self.filter_highcut = float(high_spin.value())
             self.filter_order = int(order_spin.value())
             self.filter_notch_enabled = notch_cb.isChecked()
 
+            # Recalculate and redraw all views dependent on filter settings
             self._update_filtered_signals()
             self._update_spectrograms()
             self._update_band_timeline()
@@ -508,19 +542,23 @@ class MainWindow(QMainWindow):
             )
 
     # ------------------------------------------------------------------
-    # Raw Data seçim takibi
+    # Raw Data selection tracking
     # ------------------------------------------------------------------
     def _connect_raw_selection(self):
+        """Connects the QTableView's selection model to the handler method."""
         sel = self.raw_table.selectionModel()
         if sel is None:
             return
         try:
+            # Disconnect previous connection if exists
             sel.selectionChanged.disconnect()
         except TypeError:
             pass
+        # Connect to the new selection handler
         sel.selectionChanged.connect(self._on_raw_selection_changed)
 
     def _on_raw_selection_changed(self, *_):
+        """Handles changes in the selected row of the raw data table."""
         if self.dataset is None:
             return
 
@@ -529,6 +567,7 @@ class MainWindow(QMainWindow):
             return
         indexes = sel.selectedIndexes()
         if not indexes:
+            # No row selected, reset state and update views
             self.selected_row_index = None
             self.selected_time = None
             self.raw_selected_label.setText("No row selected.")
@@ -540,15 +579,18 @@ class MainWindow(QMainWindow):
             self._update_topomap()
             return
 
+        # Get the row index of the first selected cell
         row_idx = indexes[0].row()
         self.selected_row_index = row_idx
 
+        # Get the data for the selected row
         row = self.dataset.df.iloc[row_idx]
         if "time" in row.index:
             self.selected_time = float(row["time"])
         else:
             self.selected_time = None
 
+        # Update the selection status label
         parts = [f"Row {row_idx}"]
         if self.selected_time is not None:
             parts.append(f"time={self.selected_time:.3f} s")
@@ -562,6 +604,7 @@ class MainWindow(QMainWindow):
 
         self.raw_selected_label.setText(" | ".join(parts))
 
+        # Update views that depend on the selected time point
         self._update_filtered_signals()
         self._update_spectrograms()
         self._update_band_power()
@@ -570,12 +613,14 @@ class MainWindow(QMainWindow):
         self._update_topomap()
 
     # ------------------------------------------------------------------
-    # Filtered Signals (global filtre)
+    # Filtered Signals (global filter)
     # ------------------------------------------------------------------
     def _update_filtered_signals(self):
+        """Filters the EEG data and plots the signals for selected channels."""
         if self.dataset is None:
             return
 
+        # Prioritize C3 and C4 channels, otherwise use all available channels
         preferred = ["C3", "C4"]
         channels = [c for c in preferred if c in self.dataset.available_channels]
         if not channels:
@@ -585,6 +630,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("No channels available to plot.")
             return
 
+        # Apply filtering based on current settings
         df_filt = filter_channels(
             self.dataset,
             channels=channels,
@@ -597,10 +643,12 @@ class MainWindow(QMainWindow):
         fig.clear()
         ax = fig.add_subplot(111)
 
+        # Plot time series for each channel
         t = df_filt["time"].to_numpy()
         for ch in channels:
             ax.plot(t, df_filt[ch].to_numpy(), label=ch)
 
+        # Draw a vertical line at the selected time, if any (synchronization)
         if self.selected_time is not None:
             ax.axvline(self.selected_time, color="red", linestyle="--", linewidth=1.0)
 
@@ -616,13 +664,14 @@ class MainWindow(QMainWindow):
         self.filtered_canvas.draw()
 
     # ------------------------------------------------------------------
-    # Band Power (ham sinyal üzerinden, her band için ayrı subplot)
+    # Band Power (from raw signal, separate subplot for each band)
     # ------------------------------------------------------------------
     def _update_band_power(self):
+        """Computes and plots band power for selected channels/window."""
         if self.dataset is None:
             return
 
-        # Öncelikli olarak C3–C4, yoksa mevcut tüm kanallar
+        # Prioritize C3-C4, otherwise use all available channels
         preferred = ["C3", "C4"]
         channels = [c for c in preferred if c in self.dataset.available_channels]
         if not channels:
@@ -635,7 +684,7 @@ class MainWindow(QMainWindow):
         ds = self.dataset
         window_info = "full signal"
 
-        # İstenirse seçili satır etrafında pencere kullan
+        # Use a segment/window around selected row if checked
         if self.bandpower_use_window.isChecked() and self.selected_time is not None:
             win = float(self.bandpower_window_spin.value())
             half = win / 2.0
@@ -645,6 +694,7 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage("Invalid window for band power.")
                 return
 
+            # Extract the segment and create a temporary EEGDataset for calculation
             seg = ds.get_segment(t0, t1)
             ds = EEGDataset(
                 filepath=ds.filepath,
@@ -655,7 +705,7 @@ class MainWindow(QMainWindow):
             )
             window_info = f"window around {self.selected_time:.3f} s (len={win:.2f} s)"
 
-        # Ham sinyalden band power hesabı
+        # Compute band power from the raw signal segment
         df_in = ds.df[["time"] + channels].copy()
         band_powers = compute_band_powers_for_channels(
             df_in, fs=ds.fs, channels=channels
@@ -665,6 +715,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("No band power data computed.")
             return
 
+        # Get list of band names (keys from the first channel's band power)
         band_names = list(next(iter(band_powers.values())).keys())
         n_bands = len(band_names)
         if n_bands == 0:
@@ -674,31 +725,33 @@ class MainWindow(QMainWindow):
         fig = self.bandpower_canvas.figure
         fig.clear()
 
-        # Her band için ayrı eksen – yan yana sub-plotlar
+        # Create subplots side-by-side, one for each band
         axes = fig.subplots(1, n_bands, squeeze=False)[0]
 
-        x = np.arange(len(channels))
+        x = np.arange(len(channels)) # X-axis positions for channels
 
         for j, (band, ax) in enumerate(zip(band_names, axes)):
+            # Get the power value for the current band across all channels
             vals = [band_powers[ch][band] for ch in channels]
 
+            # Plot as a bar chart
             ax.bar(x, vals)
             ax.set_xticks(x)
-            ax.set_xticklabels(channels)
+            ax.set_xticklabels(channels) # Set channel names as X ticks
 
             ax.set_title(band)
 
             if j == 0:
                 ax.set_ylabel("Power (a.u.)")
             else:
-                # Y eksen yazılarını temizle, sadece ilk grafikte kalsın
+                # Clear Y-axis labels for subplots after the first one
                 ax.set_yticklabels([])
 
         fig.suptitle(
             f"Band Power ({window_info})\n(computed from raw signal)",
             y=0.98,
         )
-        fig.tight_layout(rect=[0, 0, 1, 0.90])
+        fig.tight_layout(rect=[0, 0, 1, 0.90]) # Adjust layout to make space for suptitle
         self.bandpower_canvas.draw()
 
         self.statusBar().showMessage(
@@ -706,12 +759,14 @@ class MainWindow(QMainWindow):
         )
 
     # ------------------------------------------------------------------
-    # Spectrograms (global filtreli)
+    # Spectrograms (globally filtered)
     # ------------------------------------------------------------------
     def _update_spectrograms(self):
+        """Computes and plots spectrograms for selected/first two channels."""
         if self.dataset is None:
             return
 
+        # Prioritize C3 and C4, otherwise use the first two available channels
         preferred = ["C3", "C4"]
         channels = [c for c in preferred if c in self.dataset.available_channels]
         if not channels:
@@ -721,6 +776,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("No channels available for spectrogram.")
             return
 
+        # Filter the data first
         df_filt = filter_channels(
             self.dataset,
             channels=channels,
@@ -734,19 +790,24 @@ class MainWindow(QMainWindow):
 
         n_ch = len(channels)
         for i, ch in enumerate(channels, start=1):
+            # Create a subplot for each channel
             ax = fig.add_subplot(n_ch, 1, i)
             x = df_filt[ch].to_numpy(dtype=float)
+            
+            # Compute Spectrogram
             f, t, Sxx = compute_spectrogram(x, fs=self.dataset.fs)
-            Sxx_db = 10 * np.log10(Sxx + 1e-12)
+            Sxx_db = 10 * np.log10(Sxx + 1e-12) # Convert power to dB
 
+            # Plot the spectrogram using pseudocolor plot
             ax.pcolormesh(t, f, Sxx_db, shading="auto")
             ax.set_ylabel("Freq (Hz)")
             ax.set_title(f"Spectrogram - {ch}")
-            ax.set_ylim(0, 120)
+            ax.set_ylim(0, 120) # Limit y-axis to a common EEG range
 
             if len(t) > 1:
                 ax.set_xlim(t[0], t[-1])
 
+            # Draw a vertical line at the selected time, if within the time range
             if self.selected_time is not None and len(t) > 1:
                 if t[0] <= self.selected_time <= t[-1]:
                     ax.axvline(
@@ -761,12 +822,14 @@ class MainWindow(QMainWindow):
         self.spectrogram_canvas.draw()
 
     # ------------------------------------------------------------------
-    # Band Timeline (Mu 8–12 Hz) – global filtre + Welch
+    # Band Timeline (Mu 8–12 Hz) – global filter + Welch
     # ------------------------------------------------------------------
     def _update_band_timeline(self):
+        """Calculates and plots Mu band power over time using a sliding window."""
         if self.dataset is None:
             return
 
+        # Prioritize C3 and C4, otherwise use all available channels
         preferred = ["C3", "C4"]
         channels = [c for c in preferred if c in self.dataset.available_channels]
         if not channels:
@@ -776,6 +839,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("No channels available for band timeline.")
             return
 
+        # Filter the entire signal first
         df_filt = filter_channels(
             self.dataset,
             channels=channels,
@@ -787,13 +851,14 @@ class MainWindow(QMainWindow):
         fs = self.dataset.fs
         t = df_filt["time"].to_numpy()
 
-        win_len = float(self.timeline_window_spin.value())
-        step_len = float(self.timeline_step_spin.value())
+        win_len = float(self.timeline_window_spin.value()) # Window length in seconds
+        step_len = float(self.timeline_step_spin.value())  # Step size in seconds
 
         if win_len <= 0 or step_len <= 0:
             self.statusBar().showMessage("Invalid window/step for band timeline.")
             return
 
+        # Convert window/step from seconds to samples
         win_samples = int(win_len * fs)
         step_samples = int(step_len * fs)
         if win_samples < 8 or step_samples < 1:
@@ -805,27 +870,30 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Signal is shorter than the window.")
             return
 
-        mu_low, mu_high = 8.0, 12.0
+        mu_low, mu_high = 8.0, 12.0 # Mu band definition
 
         times = []
         powers_per_channel = {ch: [] for ch in channels}
 
+        # Sliding window calculation loop
         start_idx = 0
         while start_idx + win_samples <= n_samples:
             end_idx = start_idx + win_samples
             seg_time = t[start_idx:end_idx]
-            center_time = (seg_time[0] + seg_time[-1]) / 2.0
+            center_time = (seg_time[0] + seg_time[-1]) / 2.0 # Center time of the window
             times.append(center_time)
 
             for ch in channels:
                 seg = df_filt[ch].to_numpy(dtype=float)[start_idx:end_idx]
-                nper = min(win_samples, 256)
+                nper = min(win_samples, 256) # nperseg for Welch's method
                 f, Pxx = welch(seg, fs=fs, nperseg=nper)
+                
+                # Sum power within the Mu band range (8–12 Hz)
                 mask = (f >= mu_low) & (f <= mu_high)
                 mu_power = Pxx[mask].sum()
                 powers_per_channel[ch].append(mu_power)
 
-            start_idx += step_samples
+            start_idx += step_samples # Move the window by the step size
 
         if not times:
             self.statusBar().showMessage("No timeline points computed.")
@@ -836,10 +904,12 @@ class MainWindow(QMainWindow):
         fig.clear()
         ax = fig.add_subplot(111)
 
+        # Plot Mu band power over time for each channel
         for ch in channels:
             p = np.array(powers_per_channel[ch])
             ax.plot(times, p, label=ch)
 
+        # Draw a vertical line at the selected time
         if self.selected_time is not None:
             ax.axvline(self.selected_time, color="red", linestyle="--", linewidth=1.0)
 
@@ -856,10 +926,10 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Mu band timeline updated.")
 
     # ------------------------------------------------------------------
-    # ERD/ERS band listesini güncelle (ham sinyal üzerinden)
+    # Refresh ERD/ERS band list (based on raw signal band power)
     # ------------------------------------------------------------------
     def _refresh_erd_band_list(self):
-        """ERD/ERS için band listesini (güzel etiketlerle) günceller."""
+        """Updates the list of frequency bands available for ERD/ERS analysis."""
         if self.dataset is None:
             return
 
@@ -869,6 +939,7 @@ class MainWindow(QMainWindow):
 
         ds = self.dataset
         df_in = ds.df[["time"] + channels].copy()
+        # Compute band power once to get the available band names
         band_powers = compute_band_powers_for_channels(
             df_in, fs=ds.fs, channels=channels
         )
@@ -877,6 +948,7 @@ class MainWindow(QMainWindow):
 
         band_names = list(next(iter(band_powers.values())).keys())
 
+        # Define user-friendly labels for common bands
         pretty_labels = {
             "delta": "Delta (0.5–4 Hz) – slow/artefact",
             "theta": "Theta (4–8 Hz)",
@@ -885,20 +957,21 @@ class MainWindow(QMainWindow):
             "gamma": "Gamma (30–45 Hz)",
         }
 
-        self.erd_band_combo.blockSignals(True)
+        self.erd_band_combo.blockSignals(True) # Temporarily block signals during update
         self.erd_band_combo.clear()
 
         default_index = 0
         for i, name in enumerate(band_names):
             label = pretty_labels.get(name, name)
-            self.erd_band_combo.addItem(label, userData=name)
+            self.erd_band_combo.addItem(label, userData=name) # Store internal band key as userData
             if name == "alpha_mu":
-                default_index = i
+                default_index = i # Set Mu band as the default selection
 
         self.erd_band_combo.setCurrentIndex(default_index)
         self.erd_band_combo.blockSignals(False)
 
     def _erd_channels(self):
+        """Returns the list of channels preferred for ERD/ERS analysis (C3/C4 or all)."""
         preferred = ["C3", "C4"]
         if self.dataset is None:
             return []
@@ -908,9 +981,10 @@ class MainWindow(QMainWindow):
         return channels
 
     # ------------------------------------------------------------------
-    # ERD/ERS hesaplama ve çizim (manuel, ham sinyal band power)
+    # ERD/ERS calculation and plotting (manual, raw signal band power)
     # ------------------------------------------------------------------
     def _update_erd_ers(self):
+        """Calculates and plots manual ERD/ERS for the selected band and intervals."""
         if self.dataset is None:
             return
         if self.erd_band_combo.count() == 0:
@@ -920,19 +994,21 @@ class MainWindow(QMainWindow):
         if idx < 0:
             return
 
-        band_name = self.erd_band_combo.itemData(idx)  # internal key
-        band_label = self.erd_band_combo.currentText()  # kullanıcıya gösterilen text
+        band_name = self.erd_band_combo.itemData(idx)  # Internal key (e.g., 'alpha_mu')
+        band_label = self.erd_band_combo.currentText()  # User-friendly label
         if not band_name:
             return
 
         t_min = float(self.dataset.time[0])
         t_max = float(self.dataset.time[-1])
 
+        # Get manually set absolute time intervals for baseline and task
         bs = float(self.erd_baseline_start.value())
         be = float(self.erd_baseline_end.value())
         ts = float(self.erd_task_start.value())
         te = float(self.erd_task_end.value())
 
+        # Check for valid time intervals
         if not (t_min <= bs < be <= t_max and t_min <= ts < te <= t_max):
             self.statusBar().showMessage("Invalid baseline/task intervals for ERD/ERS.")
             return
@@ -943,18 +1019,22 @@ class MainWindow(QMainWindow):
             return
 
         def band_power_interval(t0, t1):
+            """Computes band power for a specific time interval."""
             seg = self.dataset.get_segment(t0, t1)
-            ds = EEGDataset(
+            # Create a temporary EEGDataset for the segment
+            ds_seg = EEGDataset(
                 filepath=self.dataset.filepath,
                 df=seg.reset_index(drop=True),
                 fs=self.dataset.fs,
                 time=seg["time"].to_numpy(),
                 available_channels=self.dataset.available_channels,
             )
-            df_in = ds.df[["time"] + channels].copy()
+            df_in = ds_seg.df[["time"] + channels].copy()
             bp = compute_band_powers_for_channels(
-                df_in, fs=ds.fs, channels=channels
+                df_in, fs=ds_seg.fs, channels=channels
             )
+            
+            # Extract the power for the selected band_name
             result = {}
             for ch in channels:
                 ch_bp = bp.get(ch, {})
@@ -962,6 +1042,7 @@ class MainWindow(QMainWindow):
                     result[ch] = float(ch_bp[band_name])
             return result
 
+        # Compute baseline and task band power
         baseline_pw = band_power_interval(bs, be)
         task_pw = band_power_interval(ts, te)
 
@@ -969,6 +1050,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Could not compute ERD/ERS band powers.")
             return
 
+        # Calculate ERD/ERS for each channel
         erd_values = {}
         for ch in channels:
             pb = baseline_pw.get(ch, None)
@@ -976,7 +1058,8 @@ class MainWindow(QMainWindow):
             if pb is None or pt is None or pb == 0:
                 erd_values[ch] = np.nan
             else:
-                erd_values[ch] = (pb - pt) / pb * 100.0  # azalma pozitif
+                # ERD% = (P_baseline - P_task) / P_baseline * 100.0 (Reduction is positive)
+                erd_values[ch] = (pb - pt) / pb * 100.0
 
         fig = self.erd_canvas.figure
         fig.clear()
@@ -986,8 +1069,9 @@ class MainWindow(QMainWindow):
         x = np.arange(len(ch_list))
         vals = [erd_values[ch] for ch in ch_list]
 
+        # Plot ERD/ERS as a bar chart
         bars = ax.bar(x, vals)
-        ax.axhline(0.0, linestyle="--", color="black", linewidth=1.0)
+        ax.axhline(0.0, linestyle="--", color="black", linewidth=1.0) # Zero line
 
         ax.set_xticks(x)
         ax.set_xticklabels(ch_list)
@@ -997,6 +1081,7 @@ class MainWindow(QMainWindow):
             f"Baseline: {bs:.2f}-{be:.2f}s, Task: {ts:.2f}-{te:.2f}s"
         )
 
+        # Add text labels for the percentage values above/below bars
         for xi, bar, ch in zip(x, bars, ch_list):
             value = bar.get_height()
             if np.isnan(value):
@@ -1005,11 +1090,12 @@ class MainWindow(QMainWindow):
                 va = "bottom"
             else:
                 label = f"{value:.1f}%"
+                # Determine position and vertical alignment of the text label
                 if value >= 0:
-                    y = value + abs(value) * 0.02 + 1.0
+                    y = value + abs(value) * 0.02 + 1.0 # Offset slightly above bar
                     va = "bottom"
                 else:
-                    y = value - abs(value) * 0.02 - 1.0
+                    y = value - abs(value) * 0.02 - 1.0 # Offset slightly below bar
                     va = "top"
             ax.text(
                 xi,
@@ -1024,6 +1110,7 @@ class MainWindow(QMainWindow):
         fig.tight_layout()
         self.erd_canvas.draw()
 
+        # Update status bar with detailed results
         info_parts = []
         for ch in ch_list:
             pb = baseline_pw.get(ch, float("nan"))
@@ -1035,9 +1122,10 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(" | ".join(info_parts))
 
     # ------------------------------------------------------------------
-    # Trial-based ERD/ERS (ham sinyal, birden çok trial)
+    # Trial-based ERD/ERS (raw signal, multiple trials)
     # ------------------------------------------------------------------
     def _compute_trial_erd_ers(self):
+        """Calculates the mean and standard deviation of ERD/ERS across consecutive trials."""
         if self.dataset is None:
             return
         if self.erd_band_combo.count() == 0:
@@ -1057,12 +1145,14 @@ class MainWindow(QMainWindow):
         t_end = float(ds.time[-1])
         total_duration = t_end - t0
 
+        # Get trial parameters from spinboxes
         trial_dur = float(self.trial_duration_spin.value())
-        b_rel_s = float(self.trial_base_start_spin.value())
-        b_rel_e = float(self.trial_base_end_spin.value())
-        t_rel_s = float(self.trial_task_start_spin.value())
-        t_rel_e = float(self.trial_task_end_spin.value())
+        b_rel_s = float(self.trial_base_start_spin.value()) # Baseline relative start
+        b_rel_e = float(self.trial_base_end_spin.value())   # Baseline relative end
+        t_rel_s = float(self.trial_task_start_spin.value()) # Task relative start
+        t_rel_e = float(self.trial_task_end_spin.value())   # Task relative end
 
+        # Validate trial parameters
         if trial_dur <= 0:
             self.statusBar().showMessage("Trial duration must be > 0.")
             return
@@ -1073,6 +1163,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Invalid task window inside trial.")
             return
 
+        # Determine the number of complete trials
         n_trials = int(np.floor(total_duration / trial_dur))
         if n_trials < 1:
             self.statusBar().showMessage("Recording is too short for even one trial.")
@@ -1084,6 +1175,7 @@ class MainWindow(QMainWindow):
             return
 
         def band_power_interval_abs(t_start_abs, t_end_abs):
+            """Computes band power for an absolute time interval using a segment."""
             seg = ds.get_segment(t_start_abs, t_end_abs)
             sub = EEGDataset(
                 filepath=ds.filepath,
@@ -1105,8 +1197,10 @@ class MainWindow(QMainWindow):
 
         trial_erd = {ch: [] for ch in channels}
 
+        # Loop through all complete trials
         for k in range(n_trials):
             trial_start = t0 + k * trial_dur
+            # Calculate absolute time points for baseline and task windows
             base_s = trial_start + b_rel_s
             base_e = trial_start + b_rel_e
             task_s = trial_start + t_rel_s
@@ -1115,29 +1209,32 @@ class MainWindow(QMainWindow):
             base_pw = band_power_interval_abs(base_s, base_e)
             task_pw = band_power_interval_abs(task_s, task_e)
 
+            # Calculate ERD/ERS for the current trial
             for ch in channels:
                 pb = base_pw.get(ch, None)
                 pt = task_pw.get(ch, None)
                 if pb is None or pt is None or pb == 0:
-                    trial_erd[ch].append(np.nan)
+                    trial_erd[ch].append(np.nan) # Append NaN if calculation fails
                 else:
                     val = (pb - pt) / pb * 100.0
                     trial_erd[ch].append(val)
 
+        # Calculate mean and standard deviation of ERD/ERS across trials
         mean_erd = {}
         std_erd = {}
         n_valid = {}
         for ch in channels:
             arr = np.array(trial_erd[ch], dtype=float)
-            valid = ~np.isnan(arr)
+            valid = ~np.isnan(arr) # Mask for valid (non-NaN) trials
             if not np.any(valid):
                 mean_erd[ch] = np.nan
                 std_erd[ch] = np.nan
                 n_valid[ch] = 0
             else:
+                # Use nanmean and nanstd to ignore NaN values
                 mean_erd[ch] = float(np.nanmean(arr))
                 std_erd[ch] = float(np.nanstd(arr))
-                n_valid[ch] = int(valid.sum())
+                n_valid[ch] = int(valid.sum()) # Count of valid trials
 
         fig = self.erd_trial_canvas.figure
         fig.clear()
@@ -1148,8 +1245,9 @@ class MainWindow(QMainWindow):
         means = [mean_erd[ch] for ch in ch_list]
         stds = [std_erd[ch] for ch in ch_list]
 
+        # Plot mean ERD/ERS with standard deviation as error bars
         bars = ax.bar(x, means, yerr=stds, capsize=6)
-        ax.axhline(0.0, linestyle="--", color="black", linewidth=1.0)
+        ax.axhline(0.0, linestyle="--", color="black", linewidth=1.0) # Zero line
 
         ax.set_xticks(x)
         ax.set_xticklabels(ch_list)
@@ -1161,6 +1259,7 @@ class MainWindow(QMainWindow):
             f"Task={t_rel_s:.2f}-{t_rel_e:.2f}s (relative to trial)"
         )
 
+        # Add text labels for mean value and valid trial count (N)
         for xi, bar, ch in zip(x, bars, ch_list):
             value = bar.get_height()
             ntr = n_valid.get(ch, 0)
@@ -1170,6 +1269,7 @@ class MainWindow(QMainWindow):
                 va = "bottom"
             else:
                 label = f"{value:.1f}% (N={ntr})"
+                # Determine position and vertical alignment of the text label
                 if value >= 0:
                     y = value + abs(value) * 0.02 + 1.0
                     va = "bottom"
@@ -1189,6 +1289,7 @@ class MainWindow(QMainWindow):
         fig.tight_layout()
         self.erd_trial_canvas.draw()
 
+        # Update status bar with detailed results
         info_parts = []
         for ch in ch_list:
             info_parts.append(
@@ -1200,12 +1301,14 @@ class MainWindow(QMainWindow):
         )
 
     # ------------------------------------------------------------------
-    # Topomap için band listesi (ham sinyal üzerinden)
+    # Topomap band list (based on raw signal band power)
     # ------------------------------------------------------------------
     def _refresh_topo_band_list(self):
+        """Updates the list of available modes (raw/band power) for the Topographic Map."""
         if self.dataset is None:
             return
 
+        # Select only channels with defined electrode positions
         channels = [
             ch
             for ch in ELECTRODE_POSITIONS.keys()
@@ -1216,6 +1319,7 @@ class MainWindow(QMainWindow):
 
         ds = self.dataset
         df_in = ds.df[["time"] + channels].copy()
+        # Compute band power once to get the available band names
         band_powers = compute_band_powers_for_channels(
             df_in, fs=ds.fs, channels=channels
         )
@@ -1226,16 +1330,18 @@ class MainWindow(QMainWindow):
 
         self.topo_mode_combo.blockSignals(True)
         self.topo_mode_combo.clear()
-        self.topo_mode_combo.addItem("Raw amplitude", userData=None)
+        self.topo_mode_combo.addItem("Raw amplitude", userData=None) # Default: raw amplitude
+        # Add band power options
         for name in band_names:
             self.topo_mode_combo.addItem(f"Band power: {name}", userData=name)
         self.topo_mode_combo.setCurrentIndex(0)
         self.topo_mode_combo.blockSignals(False)
 
     # ------------------------------------------------------------------
-    # Topographic Map (raw veya band-seçimli, ham sinyal band power)
+    # Topographic Map (raw or band-selected, raw signal band power)
     # ------------------------------------------------------------------
     def _update_topomap(self):
+        """Generates and plots a 2D topographic map of channel activity."""
         if self.dataset is None:
             return
 
@@ -1243,11 +1349,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "topo_mode_combo"):
             idx = self.topo_mode_combo.currentIndex()
             if idx >= 0:
-                selected_band = self.topo_mode_combo.itemData(idx)
+                selected_band = self.topo_mode_combo.itemData(idx) # Internal band key or None for raw
 
         channel_values = {}
 
-        # RAW AMPLITUDE MODU
+        # RAW AMPLITUDE MODE
         if selected_band is None:
             if self.selected_row_index is None:
                 self.statusBar().showMessage(
@@ -1255,6 +1361,7 @@ class MainWindow(QMainWindow):
                 )
                 return
 
+            # Use the raw amplitude value at the selected time point
             row = self.dataset.df.iloc[self.selected_row_index]
             for ch, (xx, yy) in ELECTRODE_POSITIONS.items():
                 if ch in self.dataset.available_channels and ch in row.index:
@@ -1263,8 +1370,9 @@ class MainWindow(QMainWindow):
                         continue
                     channel_values[ch] = float(val)
 
-        # BAND POWER MODU (ham sinyal)
+        # BAND POWER MODE (raw signal)
         else:
+            # Select channels that have both data and defined positions
             channels = [
                 ch
                 for ch in ELECTRODE_POSITIONS.keys()
@@ -1275,6 +1383,8 @@ class MainWindow(QMainWindow):
                 return
 
             ds = self.dataset
+            
+            # Use a time window if checked
             if self.bandpower_use_window.isChecked() and self.selected_time is not None:
                 win = float(self.bandpower_window_spin.value())
                 half = win / 2.0
@@ -1284,6 +1394,7 @@ class MainWindow(QMainWindow):
                     self.statusBar().showMessage("Invalid window for topomap.")
                     return
 
+                # Create temporary EEGDataset for the segment
                 seg = ds.get_segment(t0, t1)
                 ds = EEGDataset(
                     filepath=ds.filepath,
@@ -1293,6 +1404,7 @@ class MainWindow(QMainWindow):
                     available_channels=ds.available_channels,
                 )
 
+            # Compute band power for the full signal or the window
             df_in = ds.df[["time"] + channels].copy()
             band_powers = compute_band_powers_for_channels(
                 df_in, fs=ds.fs, channels=channels
@@ -1302,6 +1414,7 @@ class MainWindow(QMainWindow):
                 return
 
             band_key = str(selected_band)
+            # Extract the power value for the selected band
             for ch in channels:
                 ch_bp = band_powers.get(ch, {})
                 if band_key in ch_bp:
@@ -1311,6 +1424,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("No channel values to plot on topomap.")
             return
 
+        # Prepare electrode positions (x, y) and values (z)
         xs, ys, zs = [], [], []
         for ch, (xx, yy) in ELECTRODE_POSITIONS.items():
             if ch in channel_values:
@@ -1322,18 +1436,25 @@ class MainWindow(QMainWindow):
         ys = np.array(ys, dtype=float)
         zs = np.array(zs, dtype=float)
 
-        zs = np.abs(zs)
+        # For raw amplitude, use absolute values for a heat map visualization
+        if selected_band is None:
+            zs = np.abs(zs) 
+        
         if zs.size == 0:
             self.statusBar().showMessage("No valid values for topomap.")
             return
+            
         zmin, zmax = zs.min(), zs.max()
+        # Normalize Z values between 0 and 1
         if np.isclose(zmin, zmax):
             zs_norm = np.ones_like(zs) * 0.5
         else:
             zs_norm = (zs - zmin) / (zmax - zmin)
 
+        # Create a grid for interpolation
         grid_x, grid_y = np.mgrid[-1:1:200j, -1:1:200j]
 
+        # Interpolate the values onto the grid (using nearest neighbor for few points)
         if len(xs) < 4:
             zi = griddata((xs, ys), zs_norm, (grid_x, grid_y), method="nearest")
         else:
@@ -1342,6 +1463,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 zi = griddata((xs, ys), zs_norm, (grid_x, grid_y), method="nearest")
 
+        # Mask data outside the head circle (r > 1.0)
         r = np.sqrt(grid_x**2 + grid_y**2)
         mask = r > 1.0
         zi_masked = np.ma.array(zi, mask=mask)
@@ -1354,23 +1476,27 @@ class MainWindow(QMainWindow):
         fig.clear()
         ax = fig.add_subplot(111)
 
+        # Plot the interpolated data as a contour map
         cf = ax.contourf(
             grid_x,
             grid_y,
             zi_masked,
             levels=40,
-            cmap="RdYlBu_r",
+            cmap="RdYlBu_r", # Red-Yellow-Blue reversed colormap
             vmin=0.0,
             vmax=1.0,
         )
 
+        # Draw the head outline
         head = plt.Circle((0, 0), 1.0, fill=False, color="black", linewidth=2)
         ax.add_patch(head)
 
+        # Draw the nose
         nose_x = [0.0, -0.08, 0.08]
         nose_y = [1.0, 1.12, 1.12]
         ax.plot(nose_x, nose_y, "k-", linewidth=2)
 
+        # Draw the ears
         ear_y = 0.0
         ear_r = 0.08
         ax.add_patch(
@@ -1380,14 +1506,16 @@ class MainWindow(QMainWindow):
             plt.Circle((1.0, ear_y), ear_r, fill=False, color="black", linewidth=2)
         )
 
+        # Plot electrode points and labels
         for ch, (xx, yy) in ELECTRODE_POSITIONS.items():
             if ch in channel_values:
-                ax.plot(xx, yy, "wo", markersize=6, markeredgecolor="black")
-                ax.text(xx + 0.03, yy + 0.03, ch, fontsize=9, color="black")
+                ax.plot(xx, yy, "wo", markersize=6, markeredgecolor="black") # White circle for electrode
+                ax.text(xx + 0.03, yy + 0.03, ch, fontsize=9, color="black") # Electrode label
 
         ax.set_aspect("equal")
-        ax.set_axis_off()
+        ax.set_axis_off() # Hide axes
 
+        # Add color bar
         cbar = fig.colorbar(cf, ax=ax)
         cbar.set_label("Relative activity (a.u.)")
 
@@ -1397,135 +1525,141 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Topographic map updated.")
 
     # ------------------------------------------------------------------
-    # Info pencereleri
+    # Info windows (descriptions of each tab/feature)
     # ------------------------------------------------------------------
     def _show_raw_info(self):
+        """Displays information about the Raw Data tab."""
         text = (
-            "Raw Data sekmesi:\n\n"
-            "- Yüklediğin .csv dosyasındaki ham EEG örneklerini satır/sütun olarak gösterir.\n"
-            "- 'time' sütunu saniye cinsinden zaman eksenini temsil eder.\n"
-            "- Diğer sütunlar elektrot kanallarıdır (C3, C4, vb.).\n"
-            "- Tablo üzerinde bir satır seçtiğinde:\n"
-            "  • Alttaki etiket satırın zamanını ve kanal genliklerini gösterir.\n"
-            "  • Diğer sekmelerde kırmızı dikey çizgi bu zamana hizalanır.\n"
-            "- Bu sekme aynı zamanda kayıt içinden belli bir anı seçip, o ana göre\n"
-            "  filtreli sinyal, spektrogram, band power ve topomap'i incelemeni sağlar."
+            "Raw Data tab:\n\n"
+            "- Displays the raw EEG samples from the loaded .csv file as rows/columns.\n"
+            "- The 'time' column represents the time axis in seconds.\n"
+            "- Other columns are electrode channels (C3, C4, etc.).\n"
+            "- When you select a row in the table:\n"
+            "  • The label below shows the time and channel amplitudes of the row.\n"
+            "  • The red vertical line in other tabs is aligned to this time point.\n"
+            "- This tab allows you to select a specific moment in the recording to\n"
+            "  examine the filtered signal, spectrogram, band power, and topomap relative to that moment."
         )
         QMessageBox.information(self, "Info – Raw Data", text)
 
     def _show_filtered_info(self):
+        """Displays information about the Filtered Signals tab."""
         text = (
-            "Filtered Signals sekmesi:\n\n"
-            "- Seçilen kanallar (tercihen C3, C4) üzerine notch + band-pass filtrasyonu uygular.\n"
-            "- Amaç: Ham EEG'deki DC drift, çok düşük frekanslar ve yüksek frekans gürültüsünü\n"
-            "  bastırıp motor imagery ile ilgili frekans aralığını daha net görmek.\n"
-            "- Filtre ayarlarını üst menüdeki 'Analysis → Filter Settings' kısmından\n"
-            "  (notch açık/kapalı, lowcut, highcut, order) değiştirebilirsin.\n"
-            "- Kırmızı dikey çizgi seçili satırın (Raw Data sekmesindeki) zamanını gösterir.\n"
-            "- Bu sekme, sinyalin zaman alanında filtrelenmiş halini yorumlamak için kullanılır."
+            "Filtered Signals tab:\n\n"
+            "- Applies notch + band-pass filtering to the selected channels (preferably C3, C4).\n"
+            "- Purpose: To suppress DC drift, very low frequencies, and high-frequency noise\n"
+            "  in the raw EEG to better visualize the frequency range related to motor imagery.\n"
+            "- Filter settings can be changed via the top menu: 'Analysis → Filter Settings'\n"
+            "  (notch on/off, lowcut, highcut, order).\n"
+            "- The red vertical line shows the time of the selected row (from the Raw Data tab).\n"
+            "- This tab is used to interpret the filtered signal in the time domain."
         )
         QMessageBox.information(self, "Info – Filtered Signals", text)
 
     def _show_bandpower_info(self):
+        """Displays information about the Band Power tab."""
         text = (
-            "Band Power sekmesi:\n\n"
-            "- Seçilen kanallar için EEG frekans bantlarına (delta, theta, mu, beta, gamma vb.)\n"
-            "  ait toplam güçleri gösterir.\n"
-            "- Güç hesaplama ham sinyal üzerinden yapılır (filtreli sinyal değil).\n"
-            "- 'Use selected row window' işaretliyse:\n"
-            "  • Seçili zamanın etrafında belirlediğin süre (Window s) kadar bir pencere alınır,\n"
-            "    band power sadece bu pencere içinde hesaplanır.\n"
-            "  • Böylece dinlenme, görev, artefakt gibi farklı anları karşılaştırabilirsin.\n"
-            "- İşaretli değilse, band power tüm kayıt üzerinden hesaplanır.\n"
-            "- Mu (8–12 Hz) ve Beta (13–30 Hz) bantları özellikle motor imagery çalışmalarında\n"
-            "  önemli olup ERD/ERS analizine temel oluşturur."
+            "Band Power tab:\n\n"
+            "- Shows the total power for the EEG frequency bands (delta, theta, mu, beta, gamma, etc.)\n"
+            "  for the selected channels.\n"
+            "- Power calculation is performed on the raw signal (not the filtered signal).\n"
+            "- If 'Use selected row window' is checked:\n"
+            "  • A window of the specified duration ('Window s') around the selected time is taken,\n"
+            "    and band power is calculated only within this window.\n"
+            "  • This allows comparing different moments like rest, task, or artifact periods.\n"
+            "- If unchecked, band power is calculated over the entire recording.\n"
+            "- Mu (8–12 Hz) and Beta (13–30 Hz) bands are particularly important in motor imagery studies\n"
+            "  and form the basis for ERD/ERS analysis."
         )
         QMessageBox.information(self, "Info – Band Power", text)
 
     def _show_spectrogram_info(self):
+        """Displays information about the Spectrograms tab."""
         text = (
-            "Spectrograms sekmesi:\n\n"
-            "- Seçilen kanallar için zaman-frekans gösterimi (spektrogram) üretir.\n"
-            "- Yatay eksen: Zaman (s), dikey eksen: Frekans (Hz), renk: Güç (dB).\n"
-            "- Filtre ayarları (notch + band-pass) burada da geçerlidir; üst menüden\n"
-            "  filtreyi değiştirerek yeniden hesaplayabilirsin.\n"
-            "- Kırmızı dikey çizgi, Raw Data sekmesindeki seçili satırın zamanını gösterir.\n"
-            "- Motor imagery analizinde, belirli zaman aralıklarında mu/beta bandındaki\n"
-            "  güç değişimlerini görselleştirmek için kullanılır.\n"
-            "- Y eksenindeki üst sınır şu anda 120 Hz'e kadar ayarlanmıştır."
+            "Spectrograms tab:\n\n"
+            "- Generates a time-frequency representation (spectrogram) for the selected channels.\n"
+            "- Horizontal axis: Time (s), Vertical axis: Frequency (Hz), Color: Power (dB).\n"
+            "- Filter settings (notch + band-pass) are also applied here; you can change the\n"
+            "  filter from the top menu and recalculate.\n"
+            "- The red vertical line shows the time of the selected row from the Raw Data tab.\n"
+            "- Used in motor imagery analysis to visualize power changes in the mu/beta band\n"
+            "  during specific time intervals.\n"
+            "- The upper limit on the Y-axis is currently set up to 120 Hz."
         )
         QMessageBox.information(self, "Info – Spectrograms", text)
 
     def _show_timeline_info(self):
+        """Displays information about the Band Timeline (Mu) tab."""
         text = (
-            "Band Timeline (Mu) sekmesi:\n\n"
-            "- Seçilen kanallar için Mu bandı (8–12 Hz) gücünün zamana göre değişimini gösterir.\n"
-            "- 'Window (s)': Her noktayı hesaplarken kullanılan pencere uzunluğudur.\n"
-            "- 'Step (s)': Pencerenin kayma adımıdır; ne kadar sık hesap yapılacağını belirler.\n"
-            "- Örn. window=2s, step=0.2s ise, her 0.2 saniyede bir 2 saniyelik pencere üzerinden\n"
-            "  Mu bandı gücü hesaplanır.\n"
-            "- Motor imagery'de C3/C4 üzerindeki Mu gücünün zaman içinde nasıl azalıp arttığını\n"
-            "  gözlemlemek için kullanılır.\n"
-            "- Kırmızı dikey çizgi seçili satır zamanını gösterir ve diğer sekmelerle senkronizedir."
+            "Band Timeline (Mu) tab:\n\n"
+            "- Shows the change in Mu band power (8–12 Hz) over time for the selected channels.\n"
+            "- 'Window (s)': The length of the sliding window used for calculating each point.\n"
+            "- 'Step (s)': The step size (slide) of the window; determines how frequently the calculation is performed.\n"
+            "- E.g., if window=2s, step=0.2s, Mu band power is calculated every 0.2 seconds over a 2-second window.\n"
+            "- Used to observe how Mu power on C3/C4 increases or decreases over time in motor imagery.\n"
+            "- The red vertical line shows the selected row time and is synchronized with other tabs."
         )
         QMessageBox.information(self, "Info – Band Timeline (Mu)", text)
 
     def _show_erd_info(self):
+        """Displays information about the Manual ERD/ERS tab."""
         text = (
-            "ERD/ERS – Manuel sekmesi:\n\n"
-            "- Baseline ve Task aralıklarını zaman ekseninden manuel olarak seçerek,\n"
-            "  her kanal için ERD/ERS (%) hesaplar.\n"
-            "- Kullanılan formül: ERD% = (P_baseline − P_task) / P_baseline × 100\n"
-            "  • Pozitif değer → Güçte azalma (ERD – event-related desynchronization)\n"
-            "  • Negatif değer → Güçte artış (ERS – event-related synchronization)\n"
-            "- 'Band' kısmından analiz edilecek frekans bandını seçebilirsin:\n"
-            "  • Mu (8–12 Hz) ve Beta (13–30 Hz) motor imagery için en kritik bantlardır.\n"
-            "- Bu sekme özellikle tek bir trial benzeri durum için hızlı ERD/ERS denemeleri\n"
-            "  yapmak ve farklı zaman aralıklarını manuel kıyaslamak için kullanılır."
+            "ERD/ERS – Manual tab:\n\n"
+            "- Manually select Baseline and Task intervals on the time axis to\n"
+            "  calculate ERD/ERS (%) for each channel.\n"
+            "- Formula used: ERD% = (P_baseline − P_task) / P_baseline × 100\n"
+            "  • Positive value → Power decrease (ERD – event-related desynchronization)\n"
+            "  • Negative value → Power increase (ERS – event-related synchronization)\n"
+            "- You can select the frequency band to analyze from the 'Band' section:\n"
+            "  • Mu (8–12 Hz) and Beta (13–30 Hz) are the most critical bands for motor imagery.\n"
+            "- This tab is mainly used for quickly testing ERD/ERS for a single trial-like situation\n"
+            "  and manually comparing different time intervals."
         )
         QMessageBox.information(self, "Info – Manual ERD/ERS", text)
 
     def _show_trial_erd_info(self):
+        """Displays information about the Trial-based ERD/ERS tab."""
         text = (
-            "Trial-based ERD/ERS sekmesi:\n\n"
-            "- Kayıt süresini eşit uzunluklu trial'lara böler ve her trial için ayrı ERD/ERS\n"
-            "  hesaplayıp kanal bazında ortalama + standart sapma üretir.\n"
-            "- 'Trial duration (s)': Her bir trial'ın süresi.\n"
-            "- 'Baseline in trial (s)': Trial içindeki relatif baseline penceresi.\n"
-            "- 'Task in trial (s)': Trial içindeki relatif görev penceresi.\n"
-            "- Örn. trial duration = 5 s, baseline = 0–2 s, task = 2–4 s:\n"
-            "  • Kayıt 0–5, 5–10, 10–15 ... saniyelik bloklara ayrılır.\n"
-            "  • Her blokta 0–2 s baseline, 2–4 s task olarak kullanılır.\n"
-            "- Bu yöntem literatürdeki motor imagery çalışmalarında kullanılan\n"
-            "  \"trial-based ERD/ERS\" yaklaşımına yakındır.\n"
-            "- Grafikte: Barlar kanal başına ortalama ERD/ERS, error bar'lar standart sapmayı\n"
-            "  gösterir; üstlerinde N (geçerli trial sayısı) bilgisi yer alır."
+            "Trial-based ERD/ERS tab:\n\n"
+            "- Divides the recording into equal-length trials, calculates ERD/ERS for each trial,\n"
+            "  and produces the mean + standard deviation per channel.\n"
+            "- 'Trial duration (s)': The duration of each trial.\n"
+            "- 'Baseline in trial (s)': The relative baseline window within the trial.\n"
+            "- 'Task in trial (s)': The relative task window within the trial.\n"
+            "- E.g., trial duration = 5 s, baseline = 0–2 s, task = 2–4 s:\n"
+            "  • The recording is divided into 0–5, 5–10, 10–15 ... second blocks.\n"
+            "  • In each block, 0–2 s is used as baseline and 2–4 s as task.\n"
+            "- This method is close to the \"trial-based ERD/ERS\" approach used in the literature\n"
+            "  for motor imagery studies.\n"
+            "- In the graph: Bars show the mean ERD/ERS per channel, error bars show the standard deviation;\n"
+            "  N (number of valid trials) information is displayed above them."
         )
         QMessageBox.information(self, "Info – Trial-based ERD/ERS", text)
 
     def _show_topomap_info(self):
+        """Displays information about the Topographic Map tab."""
         text = (
-            "Topographic Map sekmesi:\n\n"
-            "- Kafa üzerinde elektrotların (C3, C4 vb.) yaklaşık konumlarını kullanarak\n"
-            "  aktiviteyi 2D bir beyin haritası şeklinde gösterir.\n"
+            "Topographic Map tab:\n\n"
+            "- Uses the approximate locations of electrodes (C3, C4, etc.) on the scalp to\n"
+            "  display activity as a 2D brain map.\n"
             "- 'Topomap mode: Raw amplitude':\n"
-            "  • Raw Data sekmesinde seçili satırdaki anlık genlikleri kullanır.\n"
-            "  • Sıcak renkler (kırmızı/sarı) yüksek aktiviteyi, soğuk renkler (mavi) düşük\n"
-            "    aktiviteyi temsil eder.\n"
+            "  • Uses the instantaneous amplitudes at the selected row in the Raw Data tab.\n"
+            "  • Warm colors (red/yellow) represent high activity, and cool colors (blue) represent low activity.\n"
             "- 'Topomap mode: Band power: ...':\n"
-            "  • Tüm kayıt (veya seçili pencere) içerisindeki ortalama band gücünü kullanır.\n"
-            "  • 'Use selected row window' açıksa, Raw Data'daki seçili zamanın etrafındaki\n"
-            "    pencere üzerinden band power hesaplanır.\n"
-            "- Bu sekme, hangi beynin hangi bölgesinde (ör. C3 vs C4) göreceli olarak daha fazla\n"
-            "  aktivite olduğunu görselleştirmek için kullanılır.\n"
-            "- Haritada kafa sınırı, kulaklar ve burun çizgisi yaklaşık oryantasyon için eklenmiştir."
+            "  • Uses the average band power over the entire recording (or the selected window).\n"
+            "  • If 'Use selected row window' is active, band power is calculated over the window\n"
+            "    around the selected time in Raw Data.\n"
+            "- This tab is used to visualize which brain region (e.g., C3 vs C4) has relatively higher\n"
+            "  activity.\n"
+            "- The head outline, ears, and nose line are included for approximate orientation on the map."
         )
         QMessageBox.information(self, "Info – Topographic Map", text)
 
     # ------------------------------------------------------------------
-    # CSV açma
+    # Open CSV file
     # ------------------------------------------------------------------
     def open_csv(self):
+        """Opens a file dialog, loads the selected CSV file, and initializes the views."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Open EEG CSV file",
@@ -1536,9 +1670,11 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            # Load the dataset using the external data_loader module
             ds = EEGDataset.from_csv(file_path)
             self.dataset = ds
 
+            # Set the Pandas model to the QTableView
             model = PandasModel(ds.df)
             self.raw_table.setModel(model)
             self._connect_raw_selection()
@@ -1549,6 +1685,7 @@ class MainWindow(QMainWindow):
                 f"duration={duration:.2f} s | channels={ds.available_channels}"
             )
 
+            # Update max range for manual ERD/ERS time spinboxes
             for sb in (
                 self.erd_baseline_start,
                 self.erd_baseline_end,
@@ -1557,14 +1694,14 @@ class MainWindow(QMainWindow):
             ):
                 sb.setRange(0.0, float(duration))
 
-            # Varsayılan manuel baseline / task (1–2 s baseline, 2–3 s task)
+            # Set default manual baseline/task intervals (e.g., 1–2s baseline, 2–3s task)
             t0 = float(ds.time[0])
             self.erd_baseline_start.setValue(t0 + 1.0)
             self.erd_baseline_end.setValue(t0 + 2.0)
             self.erd_task_start.setValue(t0 + 2.0)
             self.erd_task_end.setValue(t0 + 3.0)
 
-            # Trial-based default: 5 s trial, 0–2 s baseline, 2–4 s task
+            # Set default trial-based settings: 5s trial, 0–2s baseline, 2–4s task
             self.trial_duration_spin.setValue(5.0)
             self.trial_base_start_spin.setValue(0.0)
             self.trial_base_end_spin.setValue(2.0)
@@ -1573,6 +1710,7 @@ class MainWindow(QMainWindow):
 
             self.tabs.setCurrentWidget(self.raw_tab)
 
+            # Initial update of all analysis tabs
             self._update_filtered_signals()
             self._refresh_topo_band_list()
             self._refresh_erd_band_list()
@@ -1588,3 +1726,4 @@ class MainWindow(QMainWindow):
                 "Error",
                 f"Failed to open CSV:\n{file_path}\n\nError: {e}",
             )
+            

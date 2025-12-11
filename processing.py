@@ -1,10 +1,10 @@
 # processing.py
 
 """
-Sinyal işleme fonksiyonları:
-- Notch ve band geçiren filtreler
-- Dataset'teki kanalların filtrelenmesi
-- Frekans band güçlerinin hesaplanması
+Signal processing functions:
+- Notch and band-pass filters
+- Filtering channels inside the dataset
+- Computing frequency band powers
 """
 
 from typing import Dict, List, Optional, Tuple
@@ -17,21 +17,21 @@ from config import FREQUENCY_BANDS
 from data_loader import EEGDataset
 
 
-# ---------- Filtre fonksiyonları ----------
+# ---------- Filter functions ----------
 
 def design_notch_filter(fs: float, freq: float = 50.0, q: float = 30.0) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Notch (çentik) filtresi tasarlar.
-    Varsayılan olarak 50 Hz için kullanılır.
+    Designs a notch filter.
+    By default, it is used for 50 Hz.
     """
-    # iirnotch dönüşü (b, a) verir
+    # iirnotch returns (b, a)
     b, a = signal.iirnotch(w0=freq, Q=q, fs=fs)
     return b, a
 
 
 def apply_notch_filter(x: np.ndarray, fs: float, freq: float = 50.0, q: float = 30.0) -> np.ndarray:
     """
-    Tek bir kanala 50 Hz notch filtresini uygular.
+    Applies a 50 Hz notch filter to a single channel.
     """
     b, a = design_notch_filter(fs, freq=freq, q=q)
     y = signal.filtfilt(b, a, x)
@@ -43,8 +43,8 @@ def design_bandpass_filter(fs: float,
                            highcut: float = 35.0,
                            order: int = 4) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Band geçiren Butterworth filtresi tasarlar.
-    Varsayılan olarak 5-35 Hz aralığını geçirir.
+    Designs a Butterworth band-pass filter.
+    By default, it passes frequencies between 5–35 Hz.
     """
     nyq = 0.5 * fs
     low = lowcut / nyq
@@ -59,14 +59,14 @@ def apply_bandpass_filter(x: np.ndarray,
                           highcut: float = 35.0,
                           order: int = 4) -> np.ndarray:
     """
-    Tek bir kanala band geçiren filtre uygular.
+    Applies a band-pass filter to a single channel.
     """
     b, a = design_bandpass_filter(fs, lowcut=lowcut, highcut=highcut, order=order)
     y = signal.filtfilt(b, a, x)
     return y
 
 
-# ---------- Dataset seviyesinde filtreleme ----------
+# ---------- Dataset-level filtering ----------
 
 def filter_channels(dataset: EEGDataset,
                     channels: Optional[List[str]] = None,
@@ -74,15 +74,15 @@ def filter_channels(dataset: EEGDataset,
                     bandpass: Tuple[float, float] = (5.0, 35.0),
                     order: int = 4) -> pd.DataFrame:
     """
-    EEGDataset içindeki belirtilen kanallara filtre uygular.
+    Applies filters to the selected channels inside an EEGDataset.
 
-    :param dataset: EEGDataset nesnesi
-    :param channels: Filtrelenecek kanallar listesi.
-                     None ise dataset.available_channels kullanılır.
-    :param apply_notch: True ise önce 50 Hz notch filtresi uygulanır.
-    :param bandpass: (lowcut, highcut) frekans bandı
-    :param order: Butterworth filtre derecesi
-    :return: Filtrelenmiş sinyalleri içeren DataFrame (time + seçilen kanallar)
+    :param dataset: EEGDataset object
+    :param channels: List of channels to filter.
+                     If None, dataset.available_channels is used.
+    :param apply_notch: If True, 50 Hz notch filter is applied first.
+    :param bandpass: (lowcut, highcut) frequency range
+    :param order: Butterworth filter order
+    :return: DataFrame containing filtered signals (time + selected channels)
     """
     if channels is None:
         channels = dataset.available_channels
@@ -90,7 +90,7 @@ def filter_channels(dataset: EEGDataset,
     fs = dataset.fs
     df = dataset.df
 
-    # Çıkış DataFrame'i: time + filtrelenmiş kanallar
+    # Output DataFrame: time + filtered channels
     filtered_df = pd.DataFrame()
     filtered_df["time"] = df["time"].values
 
@@ -98,16 +98,16 @@ def filter_channels(dataset: EEGDataset,
 
     for ch in channels:
         if ch not in df.columns:
-            # Kanal yoksa uyarı vermeden atla (UI tarafında mesajlanabilir)
+            # If the channel does not exist, skip quietly (UI can show a message)
             continue
 
         x = df[ch].to_numpy(dtype=float)
 
-        # Önce notch (varsa)
+        # Apply notch filter first (if enabled)
         if apply_notch:
             x = apply_notch_filter(x, fs=fs)
 
-        # Sonra band geçiren filtre
+        # Then apply band-pass filter
         x = apply_bandpass_filter(x, fs=fs, lowcut=lowcut, highcut=highcut, order=order)
 
         filtered_df[ch] = x
@@ -115,28 +115,28 @@ def filter_channels(dataset: EEGDataset,
     return filtered_df
 
 
-# ---------- Band power hesaplama ----------
+# ---------- Band power calculations ----------
 
 def compute_band_powers_for_signal(x: np.ndarray,
                                    fs: float,
                                    bands: Dict[str, Tuple[float, float]] = FREQUENCY_BANDS
                                    ) -> Dict[str, float]:
     """
-    Tek bir sinyal için her bir frekans bandındaki gücü hesaplar.
+    Computes the power of each frequency band for a single signal.
 
-    Welch yöntemini kullanır.
-    Dönen sözlük: { "delta": güç, "theta": güç, ... }
+    Uses the Welch method.
+    Returns a dictionary: { "delta": power, "theta": power, ... }
     """
-    # Welch ile güç spektral yoğunluğu (PSD) hesapla
+    # Compute PSD using Welch
     f, psd = signal.welch(x, fs=fs, nperseg=min(1024, len(x)))
 
     band_powers: Dict[str, float] = {}
 
     for band_name, (fmin, fmax) in bands.items():
-        # İlgili frekans aralığındaki indeksleri bul
+        # Find the indices corresponding to the band
         idx = np.logical_and(f >= fmin, f <= fmax)
-        # Bu aralıktaki PSD toplamını band gücü olarak al
-        band_power = np.trapz(psd[idx], f[idx])  # entegral: güç ~ alan
+        # Integrate PSD within the band to obtain power
+        band_power = np.trapz(psd[idx], f[idx])  # integral = area = band power
         band_powers[band_name] = float(band_power)
 
     return band_powers
@@ -148,12 +148,12 @@ def compute_band_powers_for_channels(filtered_df: pd.DataFrame,
                                      bands: Dict[str, Tuple[float, float]] = FREQUENCY_BANDS
                                      ) -> Dict[str, Dict[str, float]]:
     """
-    Birden fazla kanal için band power hesaplar.
+    Computes band powers for multiple channels.
 
-    :param filtered_df: Filtrelenmiş sinyalleri içeren DataFrame (time + kanallar)
-    :param fs: Örnekleme frekansı
-    :param channels: Hesaplanacak kanallar listesi (None ise tüm kolonlardan time hariç olanlar)
-    :param bands: Frekans band tanımları
+    :param filtered_df: DataFrame containing filtered signals (time + channels)
+    :param fs: Sampling frequency
+    :param channels: Channels to analyze (None → all except 'time')
+    :param bands: Frequency band definitions
     :return: {"C3": {"delta": .., "theta": .., ...}, "C4": {...}, ...}
     """
     if channels is None:
@@ -171,6 +171,7 @@ def compute_band_powers_for_channels(filtered_df: pd.DataFrame,
 
     return results
 
+
 # ---------- Spectrogram ----------
 
 def compute_spectrogram(
@@ -180,16 +181,16 @@ def compute_spectrogram(
     noverlap: int = 384,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Tek bir sinyal için zaman-frekans spektrogramı hesaplar.
+    Computes the time-frequency spectrogram of a single signal.
 
-    Daha yüksek çözünürlük için:
+    For higher resolution:
     - nperseg = 512
     - noverlap = 384 (75% overlap)
 
-    Bu değerler EEG için çok daha düzgün sonuç verir.
+    These settings produce smoother results for EEG.
     """
 
-    # Eğer sinyal kısa ise segment boyunu düşür
+    # If the signal is shorter than nperseg, reduce segment size
     if len(x) < nperseg:
         nperseg = max(64, len(x) // 2)
         noverlap = nperseg // 2
