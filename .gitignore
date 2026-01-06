@@ -1,0 +1,24 @@
+# Environment
+venv/
+env/
+.env
+
+# Byte-compiled / Optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / Packaging
+dist/
+build/
+*.spec
+
+# macOS
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
+
+# Node (since I saw node_modules)
+node_modules/
