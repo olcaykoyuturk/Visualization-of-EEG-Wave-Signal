@@ -25,6 +25,11 @@ from PyQt5.QtWidgets import (
     QSpinBox,
     QComboBox,
     QPushButton,
+    QTextEdit,
+    QScrollArea,
+    QGroupBox,
+    QLineEdit,
+    QProgressBar,
 )
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -41,6 +46,13 @@ from processing import (
     compute_band_powers_for_channels,
     compute_spectrogram,
 )
+
+# Gemini API integration
+try:
+    from gemini_api import GeminiEEGAnalyzer, check_gemini_available
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------
@@ -403,6 +415,9 @@ class MainWindow(QMainWindow):
         self.topo_layout.addWidget(self.topo_canvas)
         self.topo_tab.setLayout(self.topo_layout)
         self.tabs.addTab(self.topo_tab, "Topographic Map")
+
+        # -------- Gemini Analysis tab setup --------
+        self._setup_gemini_tab()
 
         # Control connections (connect UI elements to update methods)
         self.bandpower_use_window.stateChanged.connect(
@@ -1726,4 +1741,255 @@ class MainWindow(QMainWindow):
                 "Error",
                 f"Failed to open CSV:\n{file_path}\n\nError: {e}",
             )
+
+    # ------------------------------------------------------------------
+    # Gemini Analysis Tab Setup and Methods
+    # ------------------------------------------------------------------
+    def _setup_gemini_tab(self):
+        """Sets up the Gemini Analysis tab for AI-powered EEG interpretation."""
+        self.gemini_tab = QWidget()
+        self.gemini_layout = QVBoxLayout()
+
+        # Check if Gemini is available
+        if not GEMINI_AVAILABLE:
+            unavailable_label = QLabel(
+                "Gemini API is not available.\n\n"
+                "Please run 'pip install google-generativeai' to install it."
+            )
+            unavailable_label.setStyleSheet("color: red; font-size: 12pt; padding: 20px;")
+            unavailable_label.setWordWrap(True)
+            self.gemini_layout.addWidget(unavailable_label)
+            self.gemini_tab.setLayout(self.gemini_layout)
+            self.tabs.addTab(self.gemini_tab, "Gemini Analysis")
+            return
+
+        # Initialize Gemini analyzer
+        self.gemini_analyzer = GeminiEEGAnalyzer()
+
+        # Header
+        header_label = QLabel("Gemini AI EEG Signal Analysis")
+        header_label.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
+        self.gemini_layout.addWidget(header_label)
+
+        # API Key section
+        api_group = QGroupBox("API Settings")
+        api_layout = QHBoxLayout()
+        api_layout.addWidget(QLabel("Gemini API Key:"))
+        self.gemini_api_key_input = QLineEdit()
+        self.gemini_api_key_input.setPlaceholderText("Enter your API key here...")
+        self.gemini_api_key_input.setEchoMode(QLineEdit.Password)
+        api_layout.addWidget(self.gemini_api_key_input)
+        api_group.setLayout(api_layout)
+        self.gemini_layout.addWidget(api_group)
+
+        # Channel selection section
+        channel_group = QGroupBox("Channel Selection (Motor Cortex)")
+        channel_layout = QHBoxLayout()
+        
+        self.gemini_ch_p3 = QCheckBox("P3")
+        self.gemini_ch_p3.setChecked(True)
+        self.gemini_ch_p4 = QCheckBox("P4")
+        self.gemini_ch_p4.setChecked(True)
+        self.gemini_ch_c3 = QCheckBox("C3")
+        self.gemini_ch_c3.setChecked(True)
+        self.gemini_ch_c4 = QCheckBox("C4")
+        self.gemini_ch_c4.setChecked(True)
+        
+        channel_layout.addWidget(self.gemini_ch_p3)
+        channel_layout.addWidget(self.gemini_ch_p4)
+        channel_layout.addWidget(self.gemini_ch_c3)
+        channel_layout.addWidget(self.gemini_ch_c4)
+        channel_layout.addStretch()
+        channel_group.setLayout(channel_layout)
+        self.gemini_layout.addWidget(channel_group)
+
+        # Time range section
+        time_group = QGroupBox("Time Range (seconds)")
+        time_layout = QHBoxLayout()
+        
+        time_layout.addWidget(QLabel("Start:"))
+        self.gemini_time_start = QDoubleSpinBox()
+        self.gemini_time_start.setRange(0.0, 9999.0)
+        self.gemini_time_start.setDecimals(2)
+        self.gemini_time_start.setValue(0.0)
+        time_layout.addWidget(self.gemini_time_start)
+        
+        time_layout.addWidget(QLabel("End:"))
+        self.gemini_time_end = QDoubleSpinBox()
+        self.gemini_time_end.setRange(0.0, 9999.0)
+        self.gemini_time_end.setDecimals(2)
+        self.gemini_time_end.setValue(10.0)
+        time_layout.addWidget(self.gemini_time_end)
+        
+        self.gemini_use_full = QCheckBox("Use full signal")
+        self.gemini_use_full.setChecked(True)
+        time_layout.addWidget(self.gemini_use_full)
+        time_layout.addStretch()
+        time_group.setLayout(time_layout)
+        self.gemini_layout.addWidget(time_group)
+
+        # Analyze button and progress
+        button_layout = QHBoxLayout()
+        self.gemini_analyze_btn = QPushButton("Analyze")
+        self.gemini_analyze_btn.setStyleSheet(
+            "font-size: 12pt; font-weight: bold; padding: 10px 20px; "
+            "background-color: #4285f4; color: white; border-radius: 5px;"
+        )
+        self.gemini_analyze_btn.clicked.connect(self._run_gemini_analysis)
+        button_layout.addWidget(self.gemini_analyze_btn)
+        
+        self.gemini_progress = QProgressBar()
+        self.gemini_progress.setVisible(False)
+        self.gemini_progress.setRange(0, 0)  # Indeterminate
+        button_layout.addWidget(self.gemini_progress)
+        button_layout.addStretch()
+        self.gemini_layout.addLayout(button_layout)
+
+        # Result display
+        result_group = QGroupBox("Gemini Analysis Result")
+        result_layout = QVBoxLayout()
+        
+        self.gemini_result_text = QTextEdit()
+        self.gemini_result_text.setReadOnly(True)
+        self.gemini_result_text.setPlaceholderText(
+            "Analysis result will appear here...\n\n"
+            "Usage:\n"
+            "1. Load an EEG CSV file\n"
+            "2. Enter your API key\n"
+            "3. Select the channels to analyze\n"
+            "4. Click 'Analyze' button"
+        )
+        self.gemini_result_text.setMinimumHeight(300)
+        result_layout.addWidget(self.gemini_result_text)
+        result_group.setLayout(result_layout)
+        self.gemini_layout.addWidget(result_group)
+
+        self.gemini_tab.setLayout(self.gemini_layout)
+        self.tabs.addTab(self.gemini_tab, "Gemini Analysis")
+
+    def _run_gemini_analysis(self):
+        """Runs the Gemini API analysis on selected EEG channels."""
+        if not GEMINI_AVAILABLE:
+            QMessageBox.warning(
+                self,
+                "Error",
+                "Gemini API is not available. Please run 'pip install google-generativeai'."
+            )
+            return
+
+        if self.dataset is None:
+            QMessageBox.warning(
+                self,
+                "Error",
+                "Please load an EEG CSV file first."
+            )
+            return
+
+        # Get API key
+        api_key = self.gemini_api_key_input.text().strip()
+        if not api_key:
+            QMessageBox.warning(
+                self,
+                "Error",
+                "Please enter your Gemini API key.\n\n"
+                "Get an API key at: https://aistudio.google.com/app/apikey"
+            )
+            return
+
+        # Get selected channels
+        selected_channels = []
+        if self.gemini_ch_p3.isChecked():
+            selected_channels.append("P3")
+        if self.gemini_ch_p4.isChecked():
+            selected_channels.append("P4")
+        if self.gemini_ch_c3.isChecked():
+            selected_channels.append("C3")
+        if self.gemini_ch_c4.isChecked():
+            selected_channels.append("C4")
+
+        # Filter to only available channels
+        available_selected = [ch for ch in selected_channels if ch in self.dataset.available_channels]
+        
+        if not available_selected:
+            QMessageBox.warning(
+                self,
+                "Error",
+                f"Selected channels ({', '.join(selected_channels)}) are not available in this dataset.\n\n"
+                f"Available channels: {', '.join(self.dataset.available_channels)}"
+            )
+            return
+
+        # Get time range
+        t_start = None
+        t_end = None
+        if not self.gemini_use_full.isChecked():
+            t_start = float(self.gemini_time_start.value())
+            t_end = float(self.gemini_time_end.value())
+            if t_end <= t_start:
+                QMessageBox.warning(
+                    self,
+                    "Error",
+                    "End time must be greater than start time."
+                )
+                return
+
+        # Show progress
+        self.gemini_progress.setVisible(True)
+        self.gemini_analyze_btn.setEnabled(False)
+        self.gemini_result_text.setPlainText("Connecting to Gemini API and running analysis...\nThis may take a few seconds.")
+        QApplication.processEvents()
+
+        try:
+            # Configure the analyzer
+            self.gemini_analyzer.configure(api_key)
+
+            # Compute band powers for the analysis
+            df_filtered = filter_channels(
+                self.dataset,
+                channels=available_selected,
+                apply_notch=self.filter_notch_enabled,
+                bandpass=(self.filter_lowcut, self.filter_highcut),
+                order=self.filter_order,
+            )
             
+            band_powers = compute_band_powers_for_channels(
+                df_filtered, 
+                fs=self.dataset.fs, 
+                channels=available_selected
+            )
+
+            # Run the analysis
+            formatted_data, analysis_result = self.gemini_analyzer.analyze_eeg(
+                df=self.dataset.df,
+                channels=available_selected,
+                fs=self.dataset.fs,
+                t_start=t_start,
+                t_end=t_end,
+                band_powers=band_powers
+            )
+
+            # Display the result
+            result_text = f"=== Gemini EEG Analysis ===\n\n"
+            result_text += f"Analyzed channels: {', '.join(available_selected)}\n"
+            if t_start is not None and t_end is not None:
+                result_text += f"Time range: {t_start:.2f}s - {t_end:.2f}s\n"
+            else:
+                result_text += f"Time range: Full signal\n"
+            result_text += f"\n{'='*50}\n\n"
+            result_text += analysis_result
+
+            self.gemini_result_text.setPlainText(result_text)
+            self.statusBar().showMessage("Gemini analysis completed!")
+
+        except Exception as e:
+            error_msg = f"An error occurred during analysis:\n\n{str(e)}"
+            self.gemini_result_text.setPlainText(error_msg)
+            QMessageBox.critical(
+                self,
+                "Error",
+                error_msg
+            )
+
+        finally:
+            self.gemini_progress.setVisible(False)
+            self.gemini_analyze_btn.setEnabled(True)

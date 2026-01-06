@@ -3,3 +3,4 @@ pandas
 scipy
 matplotlib
 pyqt5
+google-generativeai
