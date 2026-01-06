@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QCheckBox
 from PyQt5.QtCore import Qt
 from scipy import signal
 
@@ -74,8 +74,13 @@ class RealTimeVizWidget(QWidget):
         
         self.time_label = QLabel("0.0s / 0.0s")
         
+        self.check_dark_mode = QCheckBox("Dark Mode")
+        self.check_dark_mode.setChecked(True)
+        self.check_dark_mode.stateChanged.connect(self._update_theme)
+        
         controls_layout.addWidget(self.status_label)
         controls_layout.addStretch()
+        controls_layout.addWidget(self.check_dark_mode) # Add toggle
         controls_layout.addWidget(self.btn_play)
         controls_layout.addWidget(self.btn_restart)
         controls_layout.addWidget(self.time_label)
@@ -83,8 +88,7 @@ class RealTimeVizWidget(QWidget):
         layout.addLayout(controls_layout)
         
         # Plot Canvas
-        # Use dark background style
-        plt.style.use('dark_background')
+        # Use dark background style (applied locally in _setup_plot)
         self.fig = Figure(figsize=(10, 8), dpi=100)
         self.fig.patch.set_facecolor('#0f0f1a')
         
@@ -98,7 +102,8 @@ class RealTimeVizWidget(QWidget):
             
         self.fig.clear()
         
-        # Create subplots
+        # Create subplots using correct style context if restarting, 
+        # but here we rely on manual styling in _update_theme
         num_channels = len(self.electrodes)
         self.axes = self.fig.subplots(num_channels, 1, sharex=True)
         if num_channels == 1:
@@ -106,29 +111,27 @@ class RealTimeVizWidget(QWidget):
             
         self.fig.subplots_adjust(hspace=0.15, left=0.10, right=0.96, top=0.95, bottom=0.08)
         
-        # Colors
-        colors = ["#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD"]
-        
+        # Colors (Dynamic)
         self.lines = []
         self.time_markers = []
+        self.channel_colors = ["#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD"] # Default dark mode colors
         
         for i, (ax, electrode) in enumerate(zip(self.axes, self.electrodes)):
-            color = colors[i % len(colors)]
-            
             # Initialize empty line
-            line, = ax.plot([], [], color=color, linewidth=1.5)
+            line, = ax.plot([], [], linewidth=1.5)
             self.lines.append(line)
             
             # Time marker (vertical line)
-            marker = ax.axvline(x=0, color='white', linestyle='--', alpha=0.5)
+            marker = ax.axvline(x=0, linestyle='--', alpha=0.5)
             self.time_markers.append(marker)
             
             # Styling
             label = ELECTRODE_LABELS.get(electrode, electrode)
-            ax.set_ylabel(label, fontsize=10, fontweight='bold', color=color, rotation=0, labelpad=40)
+            ax.set_ylabel(label, fontsize=10, fontweight='bold', rotation=0, labelpad=40)
             ax.set_xlim(0, self.window_size)
-            ax.set_ylim(-3.5, 3.5) # Normalized scale
-            ax.set_yticks([-3.0, 0, 3.0])
+            ax.set_ylim(-3.5, 3.5)
+            
+            # Fixed tick usage will be handled in update_frame
             ax.grid(True, alpha=0.2)
             
             # Remove spines
@@ -139,10 +142,53 @@ class RealTimeVizWidget(QWidget):
             # Hide x tick labels for all except last
             if i < num_channels - 1:
                 ax.set_xticklabels([])
-            else:
-                ax.set_xlabel("Time (s)", color='white')
                 
+        # Apply initial theme
+        self._update_theme()
+        
         # Draw initial state
+        self.canvas.draw()
+        
+    def _update_theme(self):
+        """Update colors based on Dark Mode toggle."""
+        is_dark = self.check_dark_mode.isChecked()
+        
+        if is_dark:
+            bg_color = '#0f0f1a' # Dark
+            text_color = 'white'
+            grid_color = 'white'
+            marker_color = 'white'
+            colors = ["#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD"] # Pastels for dark
+        else:
+            bg_color = 'white' # Light
+            text_color = 'black'
+            grid_color = 'black'
+            marker_color = 'red'
+            colors = ["#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd"] # Standard matplotlib colors
+            
+        self.fig.patch.set_facecolor(bg_color)
+        
+        if hasattr(self, 'axes'):
+            for i, ax in enumerate(self.axes):
+                ax.set_facecolor(bg_color)
+                ax.tick_params(colors=text_color, which='both')
+                ax.xaxis.label.set_color(text_color)
+                ax.yaxis.label.set_color(colors[i % len(colors)]) # Keep y-label colored matching line
+                ax.spines['left'].set_color(text_color)
+                ax.spines['bottom'].set_color(text_color)
+                
+                # Update line color
+                if i < len(self.lines):
+                    self.lines[i].set_color(colors[i % len(colors)])
+                
+                # Update marker color
+                if i < len(self.time_markers):
+                    self.time_markers[i].set_color(marker_color)
+                    
+            # Set X label for bottom axis
+            if len(self.axes) > 0:
+                self.axes[-1].set_xlabel("Time (s)", color=text_color)
+        
         self.canvas.draw()
         
     def set_dataset(self, dataset):

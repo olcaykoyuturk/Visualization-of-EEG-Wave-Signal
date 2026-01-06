@@ -111,6 +111,8 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        # Ensure default style for main window plots
+        plt.style.use('default')
 
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         self.resize(1300, 750)
@@ -148,7 +150,12 @@ class MainWindow(QMainWindow):
         self.raw_selected_label = QLabel("No row selected.")
         self.raw_layout.addWidget(self.raw_selected_label)
         self.raw_tab.setLayout(self.raw_layout)
+        self.raw_tab.setLayout(self.raw_layout)
         self.tabs.addTab(self.raw_tab, "Raw Data")
+
+        # -------- Real-time Visualization tab setup (Moved to 2nd position) --------
+        self.realtime_tab = RealTimeVizWidget()
+        self.tabs.addTab(self.realtime_tab, "Real-time Visualization")
 
         # -------- Filtered Signals tab setup --------
         self.filtered_tab = QWidget()
@@ -417,13 +424,6 @@ class MainWindow(QMainWindow):
         self.topo_tab.setLayout(self.topo_layout)
         self.tabs.addTab(self.topo_tab, "Topographic Map")
 
-        # -------- Gemini Analysis tab setup --------
-        self._setup_gemini_tab()
-
-        # -------- Real-time Visualization tab setup --------
-        self.realtime_tab = RealTimeVizWidget()
-        self.tabs.addTab(self.realtime_tab, "Real-time Visualization")
-
         # Control connections (connect UI elements to update methods)
         self.bandpower_use_window.stateChanged.connect(
             lambda _: (self._update_band_power(), self._update_topomap())
@@ -458,6 +458,9 @@ class MainWindow(QMainWindow):
 
         # Connect trial-based ERD/ERS compute button
         self.trial_compute_button.clicked.connect(self._compute_trial_erd_ers)
+
+        # -------- Gemini Analysis tab setup (Moved to Last position) --------
+        self._setup_gemini_tab()
 
         # Menu setup
         self._create_menu()
