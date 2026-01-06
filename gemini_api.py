@@ -11,7 +11,8 @@ import numpy as np
 import pandas as pd
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
@@ -27,9 +28,9 @@ class GeminiEEGAnalyzer:
     
     # Available models (in order of preference)
     AVAILABLE_MODELS = [
+        "gemini-2.0-flash",
         "gemini-1.5-flash",
         "gemini-1.5-pro",
-        "gemini-2.0-flash",
     ]
     
     def __init__(self, api_key: Optional[str] = None):
@@ -40,27 +41,31 @@ class GeminiEEGAnalyzer:
         """
         if not GENAI_AVAILABLE:
             raise ImportError(
-                "google-generativeai package is not installed. "
-                "Please install it with: pip install google-generativeai"
+                "google-genai package is not installed. "
+                "Please install it with: pip install google-genai"
             )
         
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        self._model = None
+        self.client = None
+        self.model_name = "gemini-2.0-flash"
+        
+        if self.api_key:
+             self.configure(self.api_key)
         
     def configure(self, api_key: str, model_name: str = "gemini-2.0-flash") -> None:
         """
         Configure the API with the provided key.
         
         :param api_key: Gemini API key
-        :param model_name: Model to use (default: gemini-1.5-flash)
+        :param model_name: Model to use (default: gemini-2.0-flash)
         """
         self.api_key = api_key
-        genai.configure(api_key=api_key)
-        self._model = genai.GenerativeModel(model_name)
+        self.model_name = model_name
+        self.client = genai.Client(api_key=api_key)
         
     def is_configured(self) -> bool:
         """Check if the API is properly configured."""
-        return self._model is not None and self.api_key is not None
+        return self.client is not None and self.api_key is not None
     
     def format_eeg_data(
         self,
@@ -142,7 +147,10 @@ Data:
         full_prompt = prompt + "\n\n" + formatted_data
         
         try:
-            response = self._model.generate_content(full_prompt)
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=full_prompt
+            )
             return response.text
         except Exception as e:
             return f"API Error: {str(e)}"
@@ -183,5 +191,5 @@ def check_gemini_available() -> Tuple[bool, str]:
     :return: Tuple of (is_available, message)
     """
     if not GENAI_AVAILABLE:
-        return False, "google-generativeai paketi yüklü değil. Lütfen 'pip install google-generativeai' komutunu çalıştırın."
+        return False, "google-genai paketi yüklü değil. Lütfen 'pip install google-genai' komutunu çalıştırın."
     return True, "Gemini API kullanıma hazır."
