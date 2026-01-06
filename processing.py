@@ -136,7 +136,7 @@ def compute_band_powers_for_signal(x: np.ndarray,
         # Find the indices corresponding to the band
         idx = np.logical_and(f >= fmin, f <= fmax)
         # Integrate PSD within the band to obtain power
-        band_power = np.trapz(psd[idx], f[idx])  # integral = area = band power
+        band_power = np.trapezoid(psd[idx], f[idx])  # integral = area = band power
         band_powers[band_name] = float(band_power)
 
     return band_powers

@@ -46,6 +46,7 @@ from processing import (
     compute_band_powers_for_channels,
     compute_spectrogram,
 )
+from ui_realtime import RealTimeVizWidget
 
 # Gemini API integration
 try:
@@ -418,6 +419,10 @@ class MainWindow(QMainWindow):
 
         # -------- Gemini Analysis tab setup --------
         self._setup_gemini_tab()
+
+        # -------- Real-time Visualization tab setup --------
+        self.realtime_tab = RealTimeVizWidget()
+        self.tabs.addTab(self.realtime_tab, "Real-time Visualization")
 
         # Control connections (connect UI elements to update methods)
         self.bandpower_use_window.stateChanged.connect(
@@ -1733,7 +1738,13 @@ class MainWindow(QMainWindow):
             self._update_spectrograms()
             self._update_band_timeline()
             self._update_erd_ers()
+            self._update_band_timeline()
+            self._update_erd_ers()
             self._update_topomap()
+            
+            # Update Real-time Visualization tab
+            if hasattr(self, 'realtime_tab'):
+                self.realtime_tab.set_dataset(self.dataset)
 
         except Exception as e:
             QMessageBox.critical(
